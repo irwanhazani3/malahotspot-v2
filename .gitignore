@@ -1,0 +1,24 @@
+# runtime / local data
+pb_data/
+backups/
+tmp/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# logs / OS / deps
+*.log
+.DS_Store
+node_modules/
+
+# binaries & archives
+pocketbase
+pocketbase.zip
+*.zip
+*.tar.gz
+
+# editors
+.vscode/
+.idea/

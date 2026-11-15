@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Realtime Ringan</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; }
+    h1 { margin: 0 0 4px; font-size: 1.4rem; }
+    .sub { margin: 0 0 12px; opacity: .7; font-size: .9rem; }
+    #log { border: 1px solid #8884; border-radius: 8px; height: 60vh; overflow-y: auto; padding: 10px; background: #8881; }
+    .msg { margin: 6px 0; line-height: 1.4; }
+    .sys { opacity: .7; font-style: italic; }
+    .meta { font-size: .8em; opacity: .7; }
+    form { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; margin-top: 10px; }
+    input, button { padding: 10px; border: 1px solid #8885; border-radius: 6px; font: inherit; }
+    button { cursor: pointer; }
+    @media (max-width: 600px) { form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Web Realtime Ringan</h1>
+  <p class="sub">Tanpa framework & tanpa dependency. Menggunakan SSE (Server-Sent Events).</p>
+  <div id="log" aria-live="polite"></div>
+  <form id="form">
+    <input id="name" placeholder="Nama" maxlength="30" value="Anon">
+    <input id="text" placeholder="Tulis pesan..." maxlength="500" autocomplete="off" required>
+    <button type="submit">Kirim</button>
+  </form>
+  <script>
+    const log = document.getElementById('log');
+    const form = document.getElementById('form');
+    const nameInput = document.getElementById('name');
+    const textInput = document.getElementById('text');
+
+    function add(type, html) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (type === 'system' ? 'sys' : '');
+      div.innerHTML = html;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+    function esc(s) {
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    const es = new EventSource('/events');
+    es.onmessage = (e) => {
+      const d = JSON.parse(e.data);
+      if (d.type === 'chat') {
+        add('chat', `<span class="meta">[${esc(d.time)}]</span> <strong>${esc(d.name)}:</strong> ${esc(d.text)}`);
+      } else {
+        add('system', esc(d.text));
+      }
+    };
+    es.onerror = () => add('system', 'Koneksi terputus, mencoba menyambung ulang...');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = textInput.value.trim();
+      if (!text) return;
+      await fetch('/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nameInput.value, text })
+      });
+      textInput.value = '';
+      textInput.focus();
+    });
+  </script>
+</body>
+</html>
