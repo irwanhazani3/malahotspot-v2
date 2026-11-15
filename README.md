@@ -58,3 +58,4 @@ Implementasi awal aplikasi admin RT/RW Net berdasarkan `spec.md`, menggunakan **
 
 ## Catatan penyelesaian
 Beberapa bagian spec masih memerlukan penyempurnaan sesuai lingkungan PocketBase/produksi: enforcement permission penuh setara matriks di semua edge case, UI relasi (pilihan nama bukan ID), upload & validasi foto di form, QR sebagai gambar + rotasi/realtime penuh, penandaan dibaca pesan, deduplikasi token QR sekali-pakai persisten, tampilan "Data nonaktif" konsisten semua modul, sinkron Sheets (nama relasi ter-resolve), notifikasi realtime browser + fallback polling 30 detik, dan hardening/backup/HTTPS. Fondasi kode dan alur utama sudah tersedia untuk dilanjutkan.
+# malahotspot-v2
