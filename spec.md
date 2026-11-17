@@ -1,7 +1,7 @@
-# Spesifikasi RT/RW Net Admin
+# Spesifikasi Malahotspot
 
 ## Tujuan
-Web admin yang sangat ringan untuk mengelola layanan RT/RW Net: pelanggan,
+Web admin yang sangat ringan untuk mengelola layanan Malahotspot: pelanggan,
 gangguan, absen teknisi, perbaikan, inventaris, pemasangan, dan komunikasi
 internal (komentar tugas, pesan langsung, pengumuman).
 
@@ -350,23 +350,30 @@ Aturan relasi saat nonaktif:
 - Admin dapat mengubah interval sinkron antara 1 dan 1440 menit. Perubahan
   berlaku tanpa perlu memulai ulang server.
 - URL dan token webhook hanya dari environment: SHEETS_WEBHOOK_URL dan
-  SHEETS_WEBHOOK_TOKEN, dikirim sebagai header Authorization Bearer.
+  SHEETS_WEBHOOK_TOKEN. Token dikirim di body JSON dan juga sebagai header
+  `Authorization: Bearer ...`.
+- Apps Script membaca konfigurasi dari Script Properties: `TOKEN` dan
+  `SPREADSHEET_ID`. Token tidak ditulis di dalam kode.
 - Satu tab per modul bisnis: pelanggan, layanan_gangguan, absen_hadir,
   perbaikan, inventaris_perangkat, inventaris_non_perangkat, pemasangan, dan
   mutasi_inventaris. Koleksi internal (selain data yang relevan), foto, data
   nonaktif, serta data komunikasi (Komentar Tugas, Pesan Langsung, Pengumuman)
   tidak ikut disalin.
 - Relasi dikirim sebagai nama yang ditampilkan, bukan id.
-- Payload webhook: `{"modules":[{"koleksi","nama","headers","rows"}]}`. `rows`
+- Payload webhook:
+  `{"token":"...","modules":[{"koleksi","nama","headers","rows"}]}`. `rows`
   berisi array nilai sesuai urutan `headers`. Apps Script menimpa tab bernama
-  `nama` dengan `headers` dan `rows`.
+  `nama` dengan `headers` dan `rows`; snapshot kosong tetap menulis header dan
+  menghapus baris lama.
 - Tanggal dikirim sebagai `YYYY-MM-DD` dan tanggal-jam sebagai
   `YYYY-MM-DD HH:mm` dalam WITA.
 - Webhook per record ditunda ke tahap berikutnya.
 - Sheets dibagikan hanya ke email tertentu sebagai Viewer, bukan lewat tautan
   umum.
+- Waktu sinkron terakhir dicatat di koleksi `pengaturan` dengan kunci
+  `sheets_last_sync`, sehingga interval tetap berlaku setelah server restart.
 - Kegagalan sinkron dicatat di log tanpa data pribadi pelanggan. Bila URL atau
-  token belum diatur, sinkron dilewati dan peringatan dicatat sekali.
+  token belum diatur, sinkron dilewati.
 
 ## Fitur umum
 - Pencarian dan filter di setiap modul:
@@ -417,6 +424,7 @@ Aturan relasi saat nonaktif:
 
 ## Catatan teknis
 - Backend PocketBase, logika server di pb_hooks/, skema lewat pb_migrations/.
+- Template penerima webhook Sheets ada di docs/apps-script-sheets.gs.
 - Frontend HTML/CSS/JS biasa.
 - Waktu disimpan dalam UTC dan ditampilkan dalam WITA.
 - Rahasia hanya dari environment: SHEETS_WEBHOOK_URL, SHEETS_WEBHOOK_TOKEN,

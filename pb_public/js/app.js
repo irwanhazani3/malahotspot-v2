@@ -13,7 +13,7 @@
     setTimeout(()=>d.remove(),4500);
     try{
       if(opts.browser && 'Notification' in window && Notification.permission === 'granted' && document.hidden){
-        const n = new Notification('RT/RW Net Admin', { body: msg });
+        const n = new Notification('Malahotspot', { body: msg });
         if(opts.onclick) n.onclick = ()=>{ window.focus(); try{opts.onclick();}catch(e){} n.close(); };
       }
     }catch(e){}
@@ -30,12 +30,13 @@
       if(!state.cache.pelanggan) state.cache.pelanggan=(await pb.collection('pelanggan').getList(1,200,{filter:'diarsipkan = false'})).items;
       if(!state.cache.barang) state.cache.barang=(await pb.collection('inventaris_non_perangkat').getList(1,200,{filter:'diarsipkan = false'})).items;
       if(!state.cache.gangguan) state.cache.gangguan=(await pb.collection('layanan_gangguan').getList(1,200,{filter:'diarsipkan = false'})).items;
+      if(!state.cache.perangkat) state.cache.perangkat=(await pb.collection('inventaris_perangkat').getList(1,500)).items;
     }catch{}
   }
   const nameOf=(arr,id,fallback=id)=>{ const x=(arr||[]).find(i=>i.id===id); return x?(x.nama||x.nama_barang||x.email||x.keluhan||x.id): (fallback||'-'); };
 
   const MODULES = [
-    {key:'users', label:'Pengguna', admin:true, cols:['nama','email','role','telepon','aktif']},
+    {key:'users', label:'Akun', admin:true, cols:['nama','email','role','telepon','aktif']},
     {key:'pelanggan', label:'Pelanggan', cols:['nama','nowa','keterangan_lokasi','sn_perangkat']},
     {key:'layanan_gangguan', label:'Gangguan', cols:['pelanggan','keluhan','status','ditugaskan_ke'], task:true},
     {key:'perbaikan', label:'Perbaikan', cols:['pelanggan','tanggal','status','teknisi','tindakan'], task:true},
@@ -49,33 +50,63 @@
   ];
 
   function layout(content){
-    const u=me(); 
-    const navItems=[['dashboard','Dashboard'],['tugas_saya','Tugas Saya'],['qr_absen','QR Absen'],['pengumuman','Pengumuman'],['pesan','Pesan'],...MODULES.filter(m=>!m.admin||isAdmin()).map(m=>[m.key,m.label]),['logout','Logout']];
+    const u=me();
+    const navItems=[['dashboard','Dashboard'],['tugas_saya','Tugas Saya'],['qr_absen','QR Absen'],['pengumuman','Pengumuman'],['pesan','Pesan'],...MODULES.filter(m=>!m.admin||isAdmin()).map(m=>[m.key,m.label]),['logout','Keluar']];
     const nav = navItems.map(([k,l])=>{
       const c = (state.notif && state.notif.by && state.notif.by[k]) || 0;
       const badge = `<span id="navBadge-${esc(k)}" class="notif-badge nav-badge" data-key="${esc(k)}" style="${c>0?'':'display:none'}">${c>99?'99+':c}</span>`;
-      return `<button data-nav="${k}" class="${state.view===k?'active':''}">${esc(l)} ${badge}</button>`;
+      return `<button data-nav="${k}" class="nav-btn ${state.view===k?'active':''}"><span class="nav-btn-left"><span>${esc(l)}</span></span>${badge}</button>`;
     }).join('');
-    const n = (state.notif && state.notif.total) ? `<span id="notifBadge" class="notif-badge">${state.notif.total>99?'99+':state.notif.total}</span>` : `<span id="notifBadge" class="notif-badge" style="display:none"></span>`;
-    return `<div class="app">
-      <div class="topbar">
-        <div class="topbar-left">
-          <div>
-            <div class="title">RT/RW Net Admin</div>
-            <div class="muted" style="color:#9ca3af;font-size:.85rem">${esc(u?.nama||u?.email||'')} (${esc(u?.role||'')})</div>
+    const total = (state.notif && state.notif.total) || 0;
+    const n = total ? `<span id="notifBadge" class="notif-badge">${total>99?'99+':total}</span>` : `<span id="notifBadge" class="notif-badge" style="display:none"></span>`;
+    const initials = (u?.nama||u?.email||'A').trim().slice(0,2).toUpperCase();
+    const currentLabel = (navItems.find(x=>x[0]===state.view)||['','Halaman'])[1];
+    const isLight = document.documentElement.classList.contains('light');
+    const themeLabel = isLight ? 'Mode Malam' : 'Mode Siang';
+    return `<div class="app app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sb-top">
+          <div class="sb-brand">
+            <div class="brand-left">
+              <div class="brand-logo">RN</div>
+              <div>
+                <div style="display:flex;align-items:center;gap:6px"><span class="brand-name">Malahotspot</span><span class="brand-tag">Admin</span></div>
+                <div class="brand-sub">Hotspot Management</div>
+              </div>
+            </div>
           </div>
-          <div class="topbar-actions">
-            <button id="btnNotif" class="btn btn-ghost notif-btn" title="Notifikasi">Notif ${n}</button>
-            <button id="menuToggle" class="btn btn-ghost menu-toggle" aria-label="Menu">Menu</button>
+          <nav id="mainNav" class="sb-nav">${nav}</nav>
+        </div>
+        <div class="sb-footer">
+          <div class="sb-user">
+            <div class="sb-avatar">${esc(initials)}</div>
+            <div class="sb-user-info">
+              <div class="sb-user-name">${esc(u?.nama||u?.email||'')}</div>
+              <div class="sb-user-role">${esc(u?.role||'')}</div>
+            </div>
           </div>
         </div>
-        <nav id="mainNav" class="main-nav">${nav}</nav>
+      </aside>
+      <div class="main-wrapper">
+        <header class="topbar">
+          <div class="topbar-inner">
+            <div>
+              <div class="topbar-title">${esc(currentLabel)}</div>
+              <div class="topbar-sub">${esc(u?.nama||u?.email||'')} · ${esc(u?.role||'')}</div>
+            </div>
+            <div class="topbar-right">
+              <button id="themeToggle" class="btn btn-ghost" title="Ganti tema">${esc(themeLabel)}</button>
+              <button id="btnNotif" class="btn btn-ghost notif-btn" title="Notifikasi">Notifikasi ${n}</button>
+              <button id="menuToggle" class="btn btn-ghost menu-toggle" aria-label="Menu">Menu</button>
+            </div>
+          </div>
+        </header>
+        <main class="container">${content}</main>
       </div>
-      <div class="container">${content}</div>
       <div id="toasts"></div>
     </div>`;
   }
-  function loginView(err=''){ return `<div class="login card"><h2>Login</h2><p class="muted">RT/RW Net Admin</p>${err?`<div class="error">${esc(err)}</div>`:''}<form id="loginForm"><label>Email/Identitas</label><input name="identity" required><label>Kata sandi</label><input name="password" type="password" required><div style="margin-top:10px"><button class="btn" type="submit">Masuk</button></div></form></div>`; }
+  function loginView(err=''){ return `<div class="login card"><h2>Login</h2><p class="muted">Malahotspot Admin</p>${err?`<div class="error">${esc(err)}</div>`:''}<form id="loginForm"><label>Email/Identitas</label><input name="identity" required><label>Kata sandi</label><input name="password" type="password" required><div style="margin-top:10px"><button class="btn" type="submit">Masuk</button></div></form></div>`; }
 
   async function render(){
     const app=$('#app'); if(!(await ensureAuth())){ app.innerHTML=loginView(); $('#loginForm').onsubmit=onLogin; return; }
@@ -129,26 +160,56 @@
     }
     updateNotifBadge();
   }
+  function applyTheme(theme){
+    const t = theme || localStorage.getItem('theme') || 'dark';
+    if(t==='light') document.documentElement.classList.add('light');
+    else document.documentElement.classList.remove('light');
+  }
+  function updateThemeToggleLabel(){
+    const tt = $('#themeToggle');
+    if(!tt) return;
+    const isLight = document.documentElement.classList.contains('light');
+    tt.textContent = isLight ? 'Mode Malam' : 'Mode Siang';
+  }
+  function toggleTheme(){
+    const isLight = document.documentElement.classList.toggle('light');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    updateThemeToggleLabel();
+  }
   function bindNav(){
     $$('[data-nav]').forEach(b=>b.onclick=()=>{ 
       const v=b.dataset.nav; 
       if(v==='logout'){pb.clear();render();return;} 
-      // clear badge for opened menu (and dashboard clears nothing special)
       clearNotif(v);
       state.view=v; state.page=1; state.search=''; state.detail=null; 
       render(); 
     });
     const nb=$('#btnNotif'); if(nb) nb.onclick=async()=>{ clearNotif('all'); const ok=await ensureNotifyPermission(); toast(ok?'Notifikasi browser aktif':'Izin notifikasi ditolak/tidak tersedia'); };
-    const mt=$('#menuToggle'), nav=$('#mainNav');
-    if(mt && nav){ mt.onclick=()=>nav.classList.toggle('open'); }
+    const mt=$('#menuToggle'), sb=$('#sidebar');
+    if(mt && sb){ mt.onclick=()=>sb.classList.toggle('open'); }
+    const tt=$('#themeToggle');
+    if(tt) tt.onclick=toggleTheme;
   }
 
   async function dashboardView(){
-    const cards=['pelanggan','layanan_gangguan','perbaikan','pemasangan','inventaris_non_perangkat'];
-    let out='<div class="card"><h2>Dashboard</h2><div class="grid">';
-    for(const c of cards){ try{ const r=await pb.collection(c).getList(1,1,{filter:'diarsipkan = false'}); out+=`<div class="card"><div class="muted">${esc(c)}</div><div style="font-size:1.4rem;font-weight:700">${r.totalItems||0}</div></div>`; }catch{ out+=`<div class="card"><div class="muted">${esc(c)}</div><div>-</div></div>`; } }
+    const cards=[
+      ['pelanggan','Pelanggan Aktif'],
+      ['layanan_gangguan','Gangguan Aktif'],
+      ['perbaikan','Perbaikan Aktif'],
+      ['pemasangan','Pemasangan Aktif'],
+      ['inventaris_non_perangkat','Stok Non-Perangkat']
+    ];
+    let out='<div><div class="kpi-grid">';
+    for(const [c,label] of cards){
+      try{
+        const r=await pb.collection(c).getList(1,1,{filter:'diarsipkan = false'});
+        out+=`<div class="kpi-card kpi-link" data-nav="${esc(c)}" role="button" tabindex="0" title="Buka ${esc(label)}"><div class="kpi-label">${esc(label)}</div><div class="kpi-value">${r.totalItems||0}</div></div>`;
+      }catch{
+        out+=`<div class="kpi-card kpi-link" data-nav="${esc(c)}" role="button" tabindex="0" title="Buka ${esc(label)}"><div class="kpi-label">${esc(label)}</div><div class="kpi-value">-</div></div>`;
+      }
+    }
     out+='</div></div><div class="card"><h3>Pengumuman Aktif</h3><div id="ann"></div></div>';
-    setTimeout(async()=>{ try{ const a=await pb.collection('pengumuman').getList(1,5,{filter:'diarsipkan = false',sort:'-dibuat_pada'}); $('#ann').innerHTML=a.items.length?a.items.map(x=>`<div class="card"><b>${esc(x.judul)}</b><div>${esc(x.isi)}</div><div class="muted">${esc(witaDisplay(x.dibuat_pada))}</div></div>`).join(''):'<div class="muted">Belum ada pengumuman.</div>'; }catch(e){ $('#ann').innerHTML=`<div class="muted">${esc(e.message)}</div>`; } },0);
+    setTimeout(async()=>{ try{ const a=await pb.collection('pengumuman').getList(1,5,{filter:'diarsipkan = false',sort:'-dibuat_pada'}); $('#ann').innerHTML=a.items.length?a.items.map(x=>`<div class="card" style="margin-top:10px"><b>${esc(x.judul)}</b><div style="margin-top:4px">${esc(x.isi)}</div><div class="muted" style="margin-top:6px">${esc(witaDisplay(x.dibuat_pada))}</div></div>`).join(''):'<div class="muted">Belum ada pengumuman.</div>'; }catch(e){ $('#ann').innerHTML=`<div class="muted">${esc(e.message)}</div>`; } },0);
     return out;
   }
 
@@ -233,8 +294,17 @@
           if(!map[k]) map[k]={nama:nm, tipe:tp, kondisi:kd, jumlah:0};
           map[k].jumlah++;
         }
-        const recaps = Object.values(map).sort((a,b)=> (a.nama+a.tipe+a.kondisi).localeCompare(b.nama+b.tipe+b.kondisi));
-        extraTop = `<div class="card"><h3>Rekap Unit (Data aktif)</h3><p class="muted">Jumlah dihitung otomatis dari unit (bukan input manual).</p>${recaps.length?`<div class="table-wrap"><table><thead><tr><th>Nama</th><th>Tipe</th><th>Kondisi</th><th>Jumlah</th></tr></thead><tbody>${recaps.map(r=>`<tr><td>${esc(r.nama)}</td><td>${esc(r.tipe)}</td><td>${esc(r.kondisi)}</td><td><b>${r.jumlah}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Belum ada data.</div>'}</div>`;
+        let recaps = Object.values(map);
+        const sortKey = state.rekapSort || 'nama';
+        const cmpStr = (a,b)=>String(a||'').localeCompare(String(b||''), 'id');
+        if(sortKey==='nama') recaps.sort((a,b)=>cmpStr(a.nama,b.nama)||cmpStr(a.tipe,b.tipe)||cmpStr(a.kondisi,b.kondisi));
+        else if(sortKey==='tipe') recaps.sort((a,b)=>cmpStr(a.tipe,b.tipe)||cmpStr(a.nama,b.nama)||cmpStr(a.kondisi,b.kondisi));
+        else if(sortKey==='kondisi') recaps.sort((a,b)=>cmpStr(a.kondisi,b.kondisi)||cmpStr(a.nama,b.nama)||cmpStr(a.tipe,b.tipe));
+        else if(sortKey==='jumlah_desc') recaps.sort((a,b)=>(b.jumlah-a.jumlah)||cmpStr(a.nama,b.nama)||cmpStr(a.tipe,b.tipe));
+        else if(sortKey==='jumlah_asc') recaps.sort((a,b)=>(a.jumlah-b.jumlah)||cmpStr(a.nama,b.nama)||cmpStr(a.tipe,b.tipe));
+        const opts = [['nama','Nama'],['tipe','Tipe'],['kondisi','Kondisi'],['jumlah_desc','Jumlah (terbanyak)'],['jumlah_asc','Jumlah (tersedikit)']];
+        const sortSel = `<label style="margin:0">Urutkan menurut</label><select id="rekapSort" style="max-width:220px">${opts.map(([v,l])=>`<option value="${v}" ${sortKey===v?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
+        extraTop = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div><h3 style="margin:0">Rekap Unit (Data aktif)</h3><p class="muted" style="margin:4px 0 0">Jumlah dihitung otomatis dari unit (bukan input manual).</p></div><div class="row" style="gap:6px;align-items:center">${sortSel}</div></div>${recaps.length?`<div class="table-wrap"><table><thead><tr><th>Nama</th><th>Tipe</th><th>Kondisi</th><th>Jumlah</th></tr></thead><tbody>${recaps.map(r=>`<tr><td>${esc(r.nama)}</td><td>${esc(r.tipe)}</td><td>${esc(r.kondisi)}</td><td><b>${r.jumlah}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Belum ada data.</div>'}</div>`;
       }catch(e){ extraTop = `<div class="card"><div class="error">Gagal memuat rekap: ${esc(e.message)}</div></div>`; }
     }
     const viewLabel = key==='users' ? (aktif?'Akun aktif':'Akun nonaktif') : (noArchive ? 'Semua data' : (aktif?'Data aktif':'Data nonaktif'));
@@ -297,19 +367,52 @@
   function canCreate(key){ if(key==='riwayat') return false; if(key==='pengaturan'||key==='pengumuman') return isAdmin(); return true; }
 
   function select(name,label,items,valFn,labelFn,selected){ return `<label>${esc(label)}</label><select name="${esc(name)}"><option value="">-</option>${items.map(i=>`<option value="${esc(valFn(i))}" ${String(selected||'')===String(valFn(i))?'selected':''}>${esc(labelFn(i))}</option>`).join('')}</select>`; }
+  function multiSelect(name,label,items,valFn,labelFn,selected){
+    const sel = Array.isArray(selected)? selected.map(String) : (selected?[String(selected)]:[]);
+    return `<label>${esc(label)} (bisa pilih lebih dari satu)</label><select name="${esc(name)}" multiple size="5">${items.map(i=>{ const v=String(valFn(i)); return `<option value="${esc(v)}" ${sel.includes(v)?'selected':''}>${esc(labelFn(i))}</option>`; }).join('')}</select>`;
+  }
   function fileInput(name,label){ return `<label>${esc(label)} (JPG/PNG/WebP, maks 2MB)</label><input name="${esc(name)}" type="file" accept="image/jpeg,image/png,image/webp">`; }
   function editorForm(key,rec={}){
-    const inp=(n,l,t='text',vals=null,ro=false)=>{ const v=rec[n]==null?'':rec[n]; if(vals) return `<label>${l}</label><select name="${n}" ${ro?'disabled':''}>${vals.map(o=>`<option value="${o}" ${String(v)===o?'selected':''}>${o}</option>`).join('')}</select>`; if(t==='textarea') return `<label>${l}</label><textarea name="${n}" ${ro?'readonly':''}>${esc(v)}</textarea>`; return `<label>${l}</label><input name="${n}" type="${t}" value="${esc(String(v))}" ${ro?'readonly':''}>`; };
+    const inp=(n,l,t='text',vals=null,ro=false,suggest=null)=>{
+      const v=rec[n]==null?'':rec[n];
+      if(vals) return `<label>${esc(l)}</label><select name="${esc(n)}" ${ro?'disabled':''}>${vals.map(o=>`<option value="${esc(o)}" ${String(v)===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+      if(t==='textarea') return `<label>${esc(l)}</label><textarea name="${esc(n)}" ${ro?'readonly':''}>${esc(v)}</textarea>`;
+      const listId = suggest && suggest.length ? `dl-${esc(n)}-${Math.random().toString(36).slice(2,7)}` : '';
+      const listAttr = listId ? ` list="${listId}"` : '';
+      const datalist = listId ? `<datalist id="${listId}">${suggest.map(s=>`<option value="${esc(s)}"></option>`).join('')}</datalist>` : '';
+      return `<label>${esc(l)}</label><input name="${esc(n)}" type="${esc(t)}" value="${esc(String(v))}"${listAttr} ${ro?'readonly':''}>${datalist}`;
+    };
     const users=state.cache.users||[]; const pels=state.cache.pelanggan||[]; const barang=state.cache.barang||[]; const gang=(state.cache.gangguan||[]);
+    const perangkat=state.cache.perangkat||[];
+    const uniq = (arr, field)=>[...new Set(arr.map(x=>String(x[field]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const namaSuggestions = uniq(perangkat,'nama');
+    const tipeSuggestions = uniq(perangkat,'tipe');
+    const materialRow = (idx,it={},locked=false)=>{
+      const opts = (state.cache.barang||[]).filter(b=>!b.diarsipkan).map(b=>`<option value="${esc(b.id)}" ${String(it.barang||'')===String(b.id)?'selected':''}>${esc((b.nama_barang||'-')+' ('+(b.satuan||'-')+') stok:'+ (b.stok??0))}</option>`).join('');
+      return `<div class="row material-row" data-idx="${idx}" style="gap:6px;align-items:flex-end;margin:6px 0;${locked?'opacity:.8':''}">
+        <div style="flex:2;min-width:180px"><label style="margin:0 0 4px">Barang</label><select class="mat-barang" ${locked?'disabled':''}><option value="">Pilih barang</option>${opts}</select></div>
+        <div style="flex:1;min-width:100px"><label style="margin:0 0 4px">Jumlah</label><input class="mat-jumlah" type="number" min="0" step="any" value="${esc(String(it.jumlah||''))}" ${locked?'readonly':''}></div>
+        <div style="flex:2;min-width:140px"><label style="margin:0 0 4px">Ket (opsional)</label><input class="mat-ket" type="text" value="${esc(String(it.keterangan||''))}" ${locked?'readonly':''}></div>
+        ${locked?'':`<div><button type="button" class="btn mat-remove">Hapus</button></div>`}
+      </div>`;
+    };
+    window.__materialRow = materialRow;
+    const materialEditor = (recData)=>{
+      const items = Array.isArray(recData.material_pemakaian) ? recData.material_pemakaian : (typeof recData.material_pemakaian==='string' ? (()=>{try{return JSON.parse(recData.material_pemakaian||'[]')}catch{return []}})() : []);
+      const locked = !!recData.material_tercatat;
+      const note = locked ? '<div class="muted" style="margin:4px 0">Material sudah tercatat otomatis saat status Selesai (tidak dapat diubah).</div>' : '<div class="muted" style="margin:4px 0">Pilih material dan jumlah. Saat status diubah ke Selesai, pemakaian stok akan dicatat otomatis sekali.</div>';
+      const rows = items.map((it,i)=>materialRow(i,it,locked)).join('');
+      return `<div class="card" style="margin-top:8px;padding:12px" id="materialBox"><label>Material Non-Perangkat (pemakaian)</label>${note}<div id="materialRows">${rows||(!locked?materialRow(0,{},false):'')}</div>${locked?'':`<div style="margin-top:6px"><button type="button" class="btn" id="addMaterialRow">+ Tambah Material</button></div>`}<input type="hidden" name="material_pemakaian" id="materialPemakaian" value="${esc(JSON.stringify(items||[]))}"></div>`;
+    };
     const map={
       pelanggan:[inp('nama','Nama'),inp('nowa','No/WA'),inp('sn_perangkat','SN'),inp('koneksi','Koneksi'),inp('vlan','VLAN'),select('teknisi','Teknisi (opsional)',users,u=>u.id,u=>u.nama||u.email,rec.teknisi),inp('link_maps','Link Maps'),inp('keterangan_lokasi','Keterangan Lokasi','textarea'),fileInput('foto_rumah','Foto Rumah')],
       layanan_gangguan:[select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('keluhan','Keluhan','textarea'),inp('status','Status','select',['Baru','Diproses','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
-      perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
-      pemasangan:[select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'),inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
+      perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),multiSelect('perangkat','Perangkat terkait',perangkat.filter(p=>!p.diarsipkan),p=>p.id,p=>`${p.nama||'-'} ${p.tipe?('('+p.tipe+')'):''} ${p.sn_serial?('SN:'+p.sn_serial):''}`.trim(), rec.perangkat),materialEditor(rec),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
+      pemasangan:[select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'),inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`, multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan),p=>p.id,p=>`${p.nama||'-'} ${p.tipe?('('+p.tipe+')'):''} ${p.sn_serial?('SN:'+p.sn_serial):''}`.trim(), rec.perangkat),materialEditor(rec)],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
-      inventaris_perangkat:[inp('nama','Nama'),inp('tipe','Tipe'),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
+      inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
       inventaris_non_perangkat:[inp('nama_barang','Nama Barang'),inp('satuan','Satuan'),inp('stok','Stok (otomatis)','number',null,true),inp('stok_minimum','Stok Minimum','number'),inp('keterangan','Keterangan','textarea')],
-      mutasi_inventaris:[select('barang','Barang',barang,b=>b.id,b=>`${b.nama_barang} (${b.satuan})`,rec.barang),inp('jenis','Jenis','select',['Pengadaan','Pemakaian','Penyesuaian']),inp('jumlah','Jumlah','number'),inp('tanggal','Tanggal','date'),inp('referensi_modul','Ref Modul','select',['-','Perbaikan','Pemasangan']),inp('referensi_id','Ref ID'),inp('keterangan','Keterangan','textarea')],
+      mutasi_inventaris:[select('barang','Barang',barang,b=>b.id,b=>`${b.nama_barang} (${b.satuan})`,rec.barang),inp('jenis','Jenis','select',['Pengadaan','Pemakaian','Penyesuaian']),inp('jumlah','Jumlah','number'),inp('tanggal','Tanggal','date'),inp('arah_penyesuaian','Arah Penyesuaian (wajib jika Penyesuaian)','select',['','Tambah','Kurang']),inp('referensi_modul','Ref Modul','select',['-','Perbaikan','Pemasangan']),inp('referensi_id','Ref ID'),inp('keterangan','Keterangan','textarea')],
       usulan_perubahan:[inp('modul','Modul (koleksi)'),inp('record_id','Record ID'),inp('nilai_usulan','Nilai Usulan (JSON)','textarea'),inp('status','Status','select',['Menunggu','Disetujui','Ditolak','Ditarik']),inp('alasan_tolak','Alasan Tolak','textarea')],
       users:[inp('nama','Nama'),inp('email','Email','email'),inp('telepon','Telepon'),inp('role','Role','select',['admin','teknisi']),`<label>Aktif</label><select name="aktif"><option value="true" ${String(rec.aktif)!=='false'?'selected':''}>true</option><option value="false" ${String(rec.aktif)==='false'?'selected':''}>false</option></select>`, (rec && rec.id ? `<label>Password baru (kosongkan jika tidak diubah)</label><input name="password" type="password" minlength="5"><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="5">` : `<label>Password (min 5)</label><input name="password" type="password" minlength="5" required><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="5" required>`)],
             pengaturan:[inp('kunci','Kunci'),inp('nilai','Nilai (JSON/teks)','textarea')],
@@ -317,15 +420,50 @@
     return (map[key]||[]).join('')+`<div style="margin-top:8px"><button class="btn" type="submit">Simpan</button></div>`;
   }
 
+  function syncMaterialEditor(){
+    const box = $('#materialBox'); if(!box) return;
+    const rows = $$('.material-row', box);
+    const items = [];
+    rows.forEach(r=>{
+      const barang = r.querySelector('.mat-barang') ? r.querySelector('.mat-barang').value : '';
+      const jumlah = r.querySelector('.mat-jumlah') ? Number(r.querySelector('.mat-jumlah').value||0) : 0;
+      const ket = r.querySelector('.mat-ket') ? r.querySelector('.mat-ket').value : '';
+      if(barang && jumlah>0) items.push({barang, jumlah, keterangan: ket});
+    });
+    const hidden = $('#materialPemakaian');
+    if(hidden) hidden.value = JSON.stringify(items);
+  }
+  function initMaterialEditor(){
+    const box = $('#materialBox'); if(!box) return;
+    const rowsWrap = $('#materialRows');
+    const addBtn = $('#addMaterialRow');
+    const bindMaterialRowEvents = ()=>{
+      $$('.mat-remove', box).forEach(btn=>btn.onclick=()=>{ const row = btn.closest('.material-row'); if(row){ row.remove(); syncMaterialEditor(); } });
+      $$('.mat-barang, .mat-jumlah, .mat-ket', box).forEach(el=>{
+        el.onchange = syncMaterialEditor;
+        el.oninput = syncMaterialEditor;
+      });
+      const form = $('#editForm') || $('#newForm');
+      if(form && !form.__matSync){ form.__matSync=true; form.addEventListener('submit', syncMaterialEditor, true); }
+    };
+    if(addBtn && window.__materialRow){
+      addBtn.onclick = ()=>{ if(!rowsWrap) return; const div=document.createElement('div'); div.innerHTML = window.__materialRow(Date.now(),{},false); rowsWrap.appendChild(div.firstElementChild); bindMaterialRowEvents(); syncMaterialEditor(); };
+    }
+    bindMaterialRowEvents();
+    syncMaterialEditor();
+  }
+
   async function bindActions(){
     $('#btnSearch')&&($('#btnSearch').onclick=()=>{state.search=$('#searchBox').value.trim();state.page=1;render();});
     $('#prevPage')&&($('#prevPage').onclick=()=>{state.page=Math.max(1,(state.page||1)-1);render();});
     $('#nextPage')&&($('#nextPage').onclick=()=>{state.page=(state.page||1)+1;render();});
     $('#aktifOnly')&&($('#aktifOnly').onchange=(e)=>{state.filterAktif=e.target.checked;state.page=1;render();});
+    $('#rekapSort')&&($('#rekapSort').onchange=(e)=>{state.rekapSort=e.target.value;render();});
     $$('[data-open]').forEach(b=>b.onclick=()=>{const [k,id]=b.dataset.open.split(':'); state.detail=id; state.view=k; render();});
     $$('[data-new]').forEach(b=>b.onclick=()=>openNew(b.dataset.new));
     $('#backBtn')&&($('#backBtn').onclick=()=>{state.detail=null; render();});
     $('#arcBtn')&&($('#arcBtn').onclick=async()=>{ try{ const k=state.view,id=state.detail; const rec=await pb.collection(k).getOne(id); const to=!rec.diarsipkan; if(!confirm(to?'Arsipkan/nonaktifkan data ini?':'Pulihkan data ini?')) return; await pb.collection(k).update(id,{diarsipkan:to, diarsipkan_pada: to? new Date().toISOString():null, diarsipkan_oleh: to? me().id:null}); toast(to?'Data dinonaktifkan':'Data dipulihkan'); render(); }catch(e){toast(e.message);} });
+    initMaterialEditor();
     $('#editForm')&&($('#editForm').onsubmit=async(ev)=>{
       ev.preventDefault();
       const key=state.view, id=state.detail;
@@ -407,6 +545,7 @@
     state.detail=null; state.view=key; await render();
     const div=document.createElement('div'); div.className='card'; div.innerHTML=`<h3>Tambah ${esc(getMod(key)?.label||key)}</h3><form id="newForm">${editorForm(key,{})}</form><button class="btn" id="cancelNew" type="button">Batal</button>`;
     $('.container').prepend(div); $('#cancelNew').onclick=()=>div.remove();
+    initMaterialEditor();
     $('#newForm').onsubmit=async(ev)=>{ ev.preventDefault(); try{ await pb.collection(key).create(formBody(key,new FormData(ev.target), true)); toast('Ditambahkan'); state.cache={}; render(); }catch(e){toast(e.message);} };
   }
 
@@ -414,11 +553,37 @@
     let hasFile=false; for(const [k,v] of fd.entries()){ if(v instanceof File && v.size>0){ hasFile=true; if(v.size>2*1024*1024) throw new Error('Ukuran foto maksimal 2MB'); } }
     const body = hasFile ? fd : {};
     const set=(k,v)=>{ if(hasFile) body.set(k,v); else body[k]=v; };
+    const multiKeys = ['perangkat'];
     if(!hasFile){
-      for(const [k,v] of fd.entries()){ if(v==='') continue; if(['jumlah','stok','stok_minimum','stok_sebelum','stok_sesudah'].includes(k)) body[k]=Number(v); else if(k==='nilai_usulan'||k==='nilai'){ try{body[k]=JSON.parse(v);}catch{body[k]=v;} } else body[k]=v; }
+      const seenMulti = new Set();
+      for(const [k,v] of fd.entries()){
+        if(multiKeys.includes(k)){
+          seenMulti.add(k);
+          body[k] = fd.getAll(k).filter(x=>x!=='');
+          continue;
+        }
+        if(v instanceof File){ if(v.size>0){ /* should have triggered hasFile, but be safe */ } continue; }
+        if(v==='') continue;
+        if(['jumlah','stok','stok_minimum','stok_sebelum','stok_sesudah'].includes(k)) body[k]=Number(v);
+        else if(k==='nilai_usulan'||k==='nilai'||k==='material_pemakaian'){ try{body[k]=JSON.parse(v|| (k==='material_pemakaian'?'[]':v));}catch{body[k]= (k==='material_pemakaian'?[]:v);} }
+        else body[k]=v;
+      }
+      multiKeys.forEach(k=>{ if(seenMulti.has(k) || fd.has(k) || ['pemasangan','perbaikan'].includes(key)) { if(!(k in body)) body[k]=[]; } });
     } else {
-      // normalize numbers/json in FormData
-      for(const [k,v] of Array.from(fd.entries())){ if(v instanceof File) continue; if(v===''){ body.delete(k); continue; } if(['jumlah','stok','stok_minimum','stok_sebelum','stok_sesudah'].includes(k)) body.set(k, String(Number(v))); if(k==='nilai_usulan'||k==='nilai'){ /* keep as string json */ } }
+      // normalize numbers/json and multi in FormData
+      multiKeys.forEach(k=>{
+        if(fd.has(k) || ['pemasangan','perbaikan'].includes(key)){
+          const vals = fd.getAll(k).filter(x=>x!=='');
+          body.delete(k);
+          vals.forEach(v=>body.append(k, v));
+        }
+      });
+      for(const [k,v] of Array.from(fd.entries())){
+        if(multiKeys.includes(k)) continue;
+        if(v instanceof File) continue;
+        if(v===''){ body.delete(k); continue; }
+        if(['jumlah','stok','stok_minimum','stok_sebelum','stok_sesudah'].includes(k)) body.set(k, String(Number(v)));
+      }
     }
     if(key==='mutasi_inventaris' && isNew){ set('dicatat_oleh', me().id); }
     if(key==='absen_hadir' && isNew){ if(!fd.get('teknisi')) set('teknisi', me().id); set('dicatat_oleh', me().id); if(!fd.get('jam_masuk')) set('jam_masuk', new Date().toISOString()); if(!fd.get('tanggal')) set('tanggal', new Date().toISOString().slice(0,10)); }
@@ -509,5 +674,6 @@
     }catch{}
   }
 
+  applyTheme();
   render(); startRealtime();
 })();

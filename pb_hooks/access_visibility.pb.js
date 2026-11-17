@@ -1,22 +1,13 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-function canAccessTask(app, auth, modul, refId){
-  if(!auth) return false;
-  if(auth.getString('role') === 'admin') return true;
-  try{
-    const rec = app.findRecordById(modul, refId);
-    if(modul === 'perbaikan') return rec.getString('teknisi') === auth.id;
-    return rec.getString('ditugaskan_ke') === auth.id;
-  }catch(e){ return false; }
-}
-
 // Enforce komentar_tugas visibility (participants/admin only)
 onRecordsListRequest((e) => {
   try{
+    const { canAccessTask } = require(__hooks + '/lib/access.js');
     if(e.collection && e.collection.name === 'komentar_tugas'){
       const auth = e.auth;
-      if(!auth){ e.records = []; return e.next(); }
-      if(auth.getString('role') !== 'admin'){
+      if(!auth){ e.records = []; }
+      else if(auth.getString('role') !== 'admin'){
         const filtered = [];
         for(const r of (e.records || [])){
           try{
@@ -32,6 +23,7 @@ onRecordsListRequest((e) => {
 
 onRecordViewRequest((e) => {
   try{
+    const { canAccessTask } = require(__hooks + '/lib/access.js');
     if(e.collection && e.collection.name === 'komentar_tugas'){
       const auth = e.auth;
       if(!auth) throw new ForbiddenError('Tidak diizinkan');
@@ -47,9 +39,12 @@ onRecordViewRequest((e) => {
 onRecordsListRequest((e) => {
   try{
     if(e.collection && e.collection.name === 'pesan_langsung'){
-      const auth = e.auth; if(!auth){ e.records=[]; return e.next(); }
-      const uid = auth.id;
-      e.records = (e.records||[]).filter(r => r.getString('pengirim')===uid || r.getString('penerima')===uid || String(r.getString('percakapan')||'').includes(uid));
+      const auth = e.auth;
+      if(!auth){ e.records = []; }
+      else {
+        const uid = auth.id;
+        e.records = (e.records||[]).filter(r => r.getString('pengirim')===uid || r.getString('penerima')===uid || String(r.getString('percakapan')||'').includes(uid));
+      }
     }
   }catch(err){ console.log('[pesan visibility]', String(err)); }
   e.next();

@@ -1,20 +1,8 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-function ensureActiveTeknisi(app, userId, allowEmpty){
-  if(!userId){ if(allowEmpty) return; throw new BadRequestError('Penugasan/teknisi wajib diisi'); }
-  try{
-    const u = app.findRecordById('users', userId);
-    if(u.getBool('aktif') === false) throw new BadRequestError('Teknisi nonaktif tidak dapat ditugaskan');
-    const role = u.getString('role');
-    if(role !== 'teknisi' && role !== 'admin') throw new BadRequestError('User bukan teknisi/admin');
-  }catch(err){
-    if(err instanceof BadRequestError) throw err;
-    throw new BadRequestError('Teknisi/penugasan tidak valid');
-  }
-}
-
 onRecordCreateRequest((e) => {
   try{
+    const { ensureActiveTeknisi } = require(__hooks + '/lib/assign.js');
     const name = e.collection && e.collection.name;
     if(name === 'layanan_gangguan' || name === 'pemasangan'){
       const a = e.record.getString('ditugaskan_ke');
@@ -30,6 +18,7 @@ onRecordCreateRequest((e) => {
 
 onRecordUpdateRequest((e) => {
   try{
+    const { ensureActiveTeknisi } = require(__hooks + '/lib/assign.js');
     const name = e.collection && e.collection.name;
     if(name === 'layanan_gangguan' || name === 'pemasangan'){
       const oldA = e.record.original().getString('ditugaskan_ke');

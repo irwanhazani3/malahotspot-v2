@@ -1,10 +1,5 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-function isAdmin(e){ return e.auth && e.auth.getString('role') === 'admin'; }
-function log(app,e,aksi,modul,id,oldV,newV,cat){
-  try{ const c=app.findCollectionByNameOrId('riwayat'); const r=new Record(c); r.set('waktu',new Date().toISOString()); r.set('aktor',e.auth?e.auth.id:''); r.set('aksi',aksi); r.set('modul',modul); r.set('record_id',id||''); r.set('nilai_lama',oldV||null); r.set('nilai_baru',newV||null); r.set('catatan',cat||''); app.save(r);}catch(err){ console.log('[riwayat proposal]', err); }
-}
-
 onRecordCreateRequest((e)=>{
   try{
     if(e.collection.name==='usulan_perubahan'){
@@ -22,6 +17,7 @@ onRecordCreateRequest((e)=>{
 
 routerAdd('POST', '/api/usulan/:id/decide', (e) => {
   try{
+    const { isAdmin, log } = require(__hooks + '/lib/proposal.js');
     if(!isAdmin(e)) return e.json(403,{message:'Hanya admin'});
     const id = e.request.pathValue('id');
     const body = e.requestInfo().body || {};
@@ -37,7 +33,6 @@ routerAdd('POST', '/api/usulan/:id/decide', (e) => {
       e.app.save(rec); log(e.app,e,'tolak','usulan_perubahan',id,null,rec,null); return e.json(200,{ok:true});
     }
     if(action === 'tarik'){
-      // admin can? spec says pemohon only; but provide admin path if needed - stick to spec: only pemohon; reject
       return e.json(403,{message:'Penarikan hanya oleh pemohon'});
     }
     if(action === 'setujui' || action === 'ubah_setujui'){
@@ -47,7 +42,12 @@ routerAdd('POST', '/api/usulan/:id/decide', (e) => {
       const target = e.app.findRecordById(modul, rid);
       if(target.getBool('diarsipkan')){ rec.set('status','Ditarik'); e.app.save(rec); return e.json(400,{message:'Data sasaran nonaktif, usulan ditarik'}); }
       const old = JSON.parse(JSON.stringify(target));
-      if(typeof nilai === 'object' && nilai){ for(const k of Object.keys(nilai)){ if(['id','collectionId','collectionName','dibuat_pada','diubah_pada'].includes(k)) continue; target.set(k, nilai[k]); } }
+      if(typeof nilai === 'object' && nilai){
+        for(const k of Object.keys(nilai)){
+          if(['id','collectionId','collectionName','dibuat_pada','diubah_pada','diarsipkan','diarsipkan_oleh','diarsipkan_pada','stok','stok_sebelum','stok_sesudah','dicatat_oleh','pemohon','peninjau','diputuskan','status'].includes(k)) continue;
+          target.set(k, nilai[k]);
+        }
+      }
       e.app.save(target);
       rec.set('status','Disetujui'); rec.set('peninjau', e.auth.id); rec.set('diputuskan', new Date().toISOString()); if(action==='ubah_setujui') rec.set('nilai_usulan', nilai);
       e.app.save(rec); log(e.app,e,'setujui','usulan_perubahan',id,old,{target:rid, applied: nilai},'usulan disetujui');
@@ -59,6 +59,7 @@ routerAdd('POST', '/api/usulan/:id/decide', (e) => {
 
 routerAdd('POST', '/api/usulan/:id/withdraw', (e) => {
   try{
+    const { log } = require(__hooks + '/lib/proposal.js');
     if(!e.auth) return e.json(401,{message:'Harus login'});
     const id = e.request.pathValue('id');
     const rec = e.app.findRecordById('usulan_perubahan', id);

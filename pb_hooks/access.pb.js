@@ -68,11 +68,11 @@ onRecordUpdateRequest((e) => {
 });
 
 onRecordDeleteRequest((e) => {
+  const name = e.collection ? e.collection.name : '';
+  if (['komentar_tugas', 'pesan_langsung', 'pengumuman'].includes(name)) { e.next(); return; }
   try {
     if (e.auth && e.auth.getBool('aktif') === false) throw new ForbiddenError('Akun nonaktif');
-    const name = e.collection ? e.collection.name : '';
     const admin = !!(e.auth && e.auth.getString('role') === 'admin');
-    if (['komentar_tugas', 'pesan_langsung', 'pengumuman'].includes(name)) { e.next(); return; }
     if (!admin) throw new ForbiddenError('Hapus/arsip hanya admin');
   } catch (err) {
     if (err instanceof ForbiddenError || err instanceof BadRequestError) throw err;

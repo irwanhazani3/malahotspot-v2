@@ -1,61 +1,180 @@
-# RT/RW Net Admin (PocketBase)
+# Malahotspot
 
-Implementasi awal aplikasi admin RT/RW Net berdasarkan `spec.md`, menggunakan **PocketBase** (backend + auth + database + realtime) dan frontend **HTML/CSS/JS** biasa.
+Aplikasi admin layanan RT/RW Net Malahotspot: pelanggan, gangguan, pemasangan,
+perbaikan, absen teknisi, inventaris, mutasi stok, komunikasi internal, serta
+sinkron satu arah ke Google Sheets.
+
+Backend dan database memakai **PocketBase**; frontend berupa HTML/CSS/JS biasa
+tanpa build step.
+
+## Status fitur
+
+Sudah berjalan dan diuji:
+
+- Login admin/teknisi, akun nonaktif tidak bisa login, password minimal 5.
+- Peran dan hak akses per modul, arsip/pulihkan, serta Riwayat audit.
+- Tugas saya, penugasan admin, komentar tugas, pesan langsung, pengumuman.
+- Mutasi inventaris (Pengadaan/Pemakaian/Penyesuaian) dengan stok konsisten.
+- Material tugas otomatis mengurangi stok saat tugas Selesai.
+- Perangkat tugas otomatis menjadi `Terpasang` beserta lokasi pelanggan.
+- Absen lewat QR, tugas, dan mandiri; waktu ditampilkan dalam WITA.
+- Validasi foto (JPG/PNG/WebP, maks. 2 MB) di server.
+- Sinkron snapshot database ke Google Sheets secara terjadwal/manual.
 
 ## Struktur
-- `pb_migrations/` — skema koleksi dan field (migrasi PocketBase JS).
-- `pb_hooks/` — logika server: riwayat, mutasi stok inventaris, auto-absen dari progres tugas, endpoint utilitas.
-- `pb_public/` — frontend web (dimuat sebagai public dir PocketBase).
-  - `index.html`, `css/app.css`, `js/pb.js` (mini client), `js/app.js`.
+
+- `pb_migrations/` — skema koleksi, perbaikan skema, dan seed admin awal.
+- `pb_hooks/` — aturan bisnis, riwayat, mutasi stok, QR, komunikasi, sinkron
+  Sheets.
+  - `pb_hooks/lib/` — helper yang di-`require` di dalam callback hook.
+- `pb_public/` — frontend web (`index.html`, `css/app.css`, `js/app.js`).
+- `docs/apps-script-sheets.gs` — kode Google Apps Script penerima webhook.
+- `pb_tests/` — test logika yang dijalankan dengan Node.js.
 - `spec.md` — spesifikasi aplikasi.
-- `.env.example` — contoh variabel rahasia.
+- `.env.example` — contoh variabel rahasia (jangan commit `.env`).
 
 ## Prasyarat
-- [PocketBase](https://pocketbase.io/) binary (disarankan versi terbaru yang mendukung JS migrations/hooks).
+
+- Binary [PocketBase](https://pocketbase.io/) yang mendukung JS migrations dan
+  hooks.
+- Node.js (hanya untuk menjalankan test).
 - Browser modern.
 
-## Menjalankan (pengembangan)
-1. Salin env contoh dan isi rahasia seperlunya:
+## Menjalankan
+
+1. Siapkan environment:
+
    ```bash
    cp .env.example .env
-   # isi QR_SECRET, dan opsional SHEETS_WEBHOOK_URL / SHEETS_WEBHOOK_TOKEN
    ```
-   Muat env ke shell Anda, atau ekspor variabel sebelum menjalankan PocketBase.
 
-2. Jalankan PocketBase dengan direktori project ini:
+   Isi minimal `QR_SECRET` dengan nilai acak. `SHEETS_WEBHOOK_URL` dan
+   `SHEETS_WEBHOOK_TOKEN` diisi bila ingin mengaktifkan sinkron Sheets.
+
+2. Muat environment lalu jalankan PocketBase:
+
    ```bash
-   ./pocketbase serve --dir ./pb_data --publicDir ./pb_public --migrationsDir ./pb_migrations --hooksDir ./pb_hooks
+   set -a
+   source .env
+   set +a
+   ./pocketbase serve --dir ./pb_data --publicDir ./pb_public \
+     --migrationsDir ./pb_migrations --hooksDir ./pb_hooks
    ```
-   PocketBase akan menjalankan migrasi di `pb_migrations/` saat start.
 
-3. Buka Admin UI PocketBase (mis. `http://127.0.0.1:8090/_/`) untuk:
-   - membuat akun admin PocketBase (superuser) jika pertama kali,
-   - mengatur field auth `users` jika perlu dan membuat user aplikasi dengan field: `nama`, `role` (`admin`/`teknisi`), `telepon`, `aktif`, email & password (min 5 karakter),
-   - menyesuaikan API rules lanjutan sesuai kebutuhan operasional.
+   Migrasi dijalankan otomatis saat start.
 
-4. Akses aplikasi: `http://127.0.0.1:8090/` dan login dengan user aplikasi (koleksi `users`).
+3. Buat superuser PocketBase untuk membuka dashboard `/_/`:
 
-## Yang sudah diimplementasikan (fondasi)
-- Migrasi koleksi utama: `users` (field tambahan), pelanggan, gangguan, perbaikan, pemasangan, absen, inventaris perangkat/non-perangkat, mutasi inventaris, usulan perubahan, riwayat, pengaturan, komentar tugas, pesan langsung, pengumuman.
-- Hook: pencatatan **riwayat** (tambah/ubah/arsip/pulihkan) best-effort, validasi & penerapan **mutasi inventaris** (stok sebelum/sesudah, tolak stok negatif, penyesuaian admin-only), cegah edit stok langsung, auto-isi teknisi perbaikan (teknisi), **auto-absen Hadir (Tugas)** saat progres status tugas terkait.
-- Frontend: login, dashboard, daftar tugas saya, daftar/detail/tambah/ubah dasar per modul, arsip/pulihkan (admin), tampilan indikator stok menipis.
-- Aturan komunikasi, QR absen, sinkron Google Sheets, usulan perubahan end-to-end, validasi hak akses rinci, dan notifikasi realtime penuh masih perlu penyelesaian/pengujian lebih lanjut sesuai `spec.md`.
+   ```bash
+   ./pocketbase superuser upsert admin@example.com 'password-kuat'
+   ```
 
-## Catatan penting
-- Spec: waktu simpan UTC, tampilkan WITA; rahasia hanya dari environment.
-- Sebelum produksi: lengkapi API rules/hook enforcement per peran & modul, validasi foto (format/ukuran), alur QR bertanda tangan + jam tutup, alur usulan, sinkron Sheets terjadwal, backup, HTTPS, dan test otomatis.
-- `server.js` dan `index.html` di root adalah sisa prototipe lama (tidak dipakai oleh setup PocketBase).
+4. Buka `http://127.0.0.1:8090/` dan login dengan akun aplikasi.
 
-## Update implementasi lanjutan
-- Hook tambahan: `pb_hooks/qr.pb.js` (generate/verify token QR, scan absen, absen hari ini), `pb_hooks/sheets.pb.js` (sinkron snapshot terjadwal/manual ke webhook Sheets), `pb_hooks/communication.pb.js` (aturan dasar komentar/pesan/pengumuman, batas edit/hapus 10 menit, riwayat metadata), `pb_hooks/proposal.pb.js` (buat usulan, endpoint setujui/tolak/ubah-setujui/tarik), `pb_hooks/business_rules.pb.js` (usulan ditarik otomatis saat data master diarsipkan, tolak referensi pelanggan/barang nonaktif).
-- Frontend diperluas: halaman QR Absen (admin: generate token & daftar absen hari ini; teknisi: scan QR via BarcodeDetector & input Izin/Sakit), Pengumuman (buat/arsip), Pesan Langsung 1-lawan-1, detail tugas dengan komentar, tampilan waktu WITA, form modul yang lebih lengkap.
-- Test dasar: `pb_tests/inventory_logic.test.js`, `pb_tests/wita_format.test.js` (jalankan dengan `node`).
+   Migrasi seed membuat akun pengembangan:
+
+   ```text
+   admin@local.test / admin123
+   ```
+
+   **Ganti atau nonaktifkan akun ini sebelum produksi.**
+
+## Sinkron ke Google Sheets
+
+Sinkron bersifat **satu arah: PocketBase → Google Sheets**. Sheets hanya untuk
+dilihat/disalin ke Excel; perubahan di Sheets tidak dikirim balik.
+
+### 1. Siapkan Apps Script
+
+1. Buka spreadsheet tujuan, lalu **Ekstensi → Apps Script**.
+2. Salin seluruh isi `docs/apps-script-sheets.gs` ke `Code.gs`.
+3. Buka **Project Settings → Script Properties**, tambahkan:
+
+   | Property | Nilai |
+   | --- | --- |
+   | `TOKEN` | sama dengan `SHEETS_WEBHOOK_TOKEN` di `.env` |
+   | `SPREADSHEET_ID` | ID spreadsheet, bagian antara `/d/` dan `/edit` pada URL |
+
+4. **Deploy → Manage deployments → Edit (pensil) → Version: New version →
+   Deploy**. Jangan memakai “New deployment” bila URL `/exec` sudah dipakai,
+   karena URL-nya akan berubah.
+5. Pastikan deployment memakai **Execute as: Me** dan **Who has access:
+   Anyone**.
+
+### 2. Arahkan server ke deployment
+
+Isi `.env`:
+
+```bash
+SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/.../exec
+SHEETS_WEBHOOK_TOKEN=token-yang-sama-dengan-Script-Property-TOKEN
+```
+
+Muat ulang environment dan restart PocketBase. Server mengirim body:
+
+```json
+{"token":"...","modules":[{"koleksi":"...","nama":"...","headers":[],"rows":[]}]}
+```
+
+Token juga dikirim di header `Authorization: Bearer ...`.
+
+### 3. Tes dan jadwal
+
+- Manual (admin): `POST /api/sheets/sync`.
+- Balasan sukses: `{"ok":true,"status":200,"modules":8}`.
+- Tab yang ditulis: `pelanggan`, `layanan_gangguan`, `absen_hadir`,
+  `perbaikan`, `inventaris_perangkat`, `inventaris_non_perangkat`,
+  `pemasangan`, `mutasi_inventaris`.
+- Setiap sinkron menimpa isi tab. Snapshot kosong tetap menulis header dan
+  menghapus baris lama.
+- Interval diatur di koleksi `pengaturan` dengan kunci
+  `interval_sinkron_sheets` (1–1440 menit, default 5). Perubahan langsung
+  berlaku tanpa restart.
+- Waktu sinkron terakhir disimpan di `pengaturan` dengan kunci
+  `sheets_last_sync`.
+- Relasi dikirim sebagai nama, tanggal dalam format WITA.
+
+Jika balasan bukan JSON atau berisi `Token tidak cocok`, periksa kembali
+Script Properties, versi deployment, akses “Anyone”, dan URL yang berakhiran
+`/exec`.
+
+## Test
+
+Jalankan semua test logika:
+
+```bash
+for f in pb_tests/*.js; do node "$f" || exit 1; done
+```
+
+Uji migrasi dari database kosong:
+
+```bash
+rm -rf /tmp/pb_fresh && mkdir -p /tmp/pb_fresh
+./pocketbase migrate up --dir /tmp/pb_fresh --migrationsDir ./pb_migrations
+./pocketbase serve --dir /tmp/pb_fresh --publicDir ./pb_public \
+  --migrationsDir ./pb_migrations --hooksDir ./pb_hooks --http 127.0.0.1:8091
+```
+
+Login `admin@local.test / admin123` harus berhasil pada database baru.
 
 ## Backup
-- Script: `./backup.sh [backup_dir]` (default `./backups`), membuat arsip `pb_data` harian/mingguan.
-- Retensi bawaan: 7 backup harian, 4 mingguan. Simpan juga salinan di luar server sesuai kebutuhan.
-- Contoh cron harian: `0 2 * * * /path/to/inv-malahotspot/backup.sh /mnt/backup/inv-malahotspot`
 
-## Catatan penyelesaian
-Beberapa bagian spec masih memerlukan penyempurnaan sesuai lingkungan PocketBase/produksi: enforcement permission penuh setara matriks di semua edge case, UI relasi (pilihan nama bukan ID), upload & validasi foto di form, QR sebagai gambar + rotasi/realtime penuh, penandaan dibaca pesan, deduplikasi token QR sekali-pakai persisten, tampilan "Data nonaktif" konsisten semua modul, sinkron Sheets (nama relasi ter-resolve), notifikasi realtime browser + fallback polling 30 detik, dan hardening/backup/HTTPS. Fondasi kode dan alur utama sudah tersedia untuk dilanjutkan.
-# malahotspot-v2
+```bash
+./backup.sh [direktori-backup]
+```
+
+Default menyimpan ke `./backups` dengan retensi 7 backup harian dan 4
+mingguan. Simpan juga salinan di luar server, misalnya:
+
+```cron
+0 2 * * * /path/to/inv-malahotspot/backup.sh /mnt/backup/inv-malahotspot
+```
+
+## Catatan produksi
+
+- Ganti password admin bawaan dan buat superuser PocketBase yang kuat.
+- Pakai HTTPS (reverse proxy) dan batasi akses dashboard `/_/`.
+- Jaga `.env` tetap privat; token Sheets hanya ada di environment server dan
+  Script Properties.
+- Bagikan spreadsheet hanya ke email tertentu sebagai Viewer.
+- Uji restore backup sebelum go-live.

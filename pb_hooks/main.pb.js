@@ -2,54 +2,60 @@
 
 // Generic history for non-riwayat collections (best-effort)
 onRecordAfterCreateSuccess((e) => {
-  try {
-    const col = e.record.collection().name;
-    if (col === 'riwayat' || String(col).startsWith('_')) { e.next(); return; }
-    let nv = null; try { nv = JSON.parse(JSON.stringify(e.record)); } catch (_) { nv = {}; }
+  const col = e.record.collection().name;
+  const skipHistory = col === 'riwayat' || String(col).startsWith('_') ||
+    (col === 'pengaturan' && e.record.getString('kunci') === 'sheets_last_sync');
+  if (!skipHistory) {
     try {
-      const hcol = e.app.findCollectionByNameOrId('riwayat');
-      const r = new Record(hcol);
-      r.set('waktu', new Date().toISOString());
-      r.set('aktor', e.auth ? e.auth.id : '');
-      r.set('aksi', 'tambah');
-      r.set('modul', col);
-      r.set('record_id', e.record.id || '');
-      r.set('nilai_lama', null);
-      r.set('nilai_baru', nv);
-      r.set('catatan', '');
-      e.app.save(r);
-    } catch (err) { console.log('[riwayat] gagal create', col, String(err)); }
-  } catch (err) { console.log('[hook create]', String(err)); }
+      let nv = null; try { nv = JSON.parse(JSON.stringify(e.record)); } catch (_) { nv = {}; }
+      try {
+        const hcol = e.app.findCollectionByNameOrId('riwayat');
+        const r = new Record(hcol);
+        r.set('waktu', new Date().toISOString());
+        r.set('aktor', e.auth ? e.auth.id : '');
+        r.set('aksi', 'tambah');
+        r.set('modul', col);
+        r.set('record_id', e.record.id || '');
+        r.set('nilai_lama', null);
+        r.set('nilai_baru', nv);
+        r.set('catatan', '');
+        e.app.save(r);
+      } catch (err) { console.log('[riwayat] gagal create', col, String(err)); }
+    } catch (err) { console.log('[hook create]', String(err)); }
+  }
   e.next();
 });
 
 onRecordAfterUpdateSuccess((e) => {
-  try {
-    const col = e.record.collection().name;
-    if (col === 'riwayat' || String(col).startsWith('_')) { e.next(); return; }
-    let aksi = 'ubah';
+  const col = e.record.collection().name;
+  const skipHistory = col === 'riwayat' || String(col).startsWith('_') ||
+    (col === 'pengaturan' && e.record.getString('kunci') === 'sheets_last_sync');
+  if (!skipHistory) {
     try {
-      const oldA = !!e.record.original().getBool('diarsipkan');
-      const newA = !!e.record.getBool('diarsipkan');
-      if (oldA !== newA) aksi = newA ? 'arsip' : 'pulihkan';
-    } catch (_) {}
-    let ov = null, nv = null;
-    try { ov = JSON.parse(JSON.stringify(e.record.original())); } catch (_) {}
-    try { nv = JSON.parse(JSON.stringify(e.record)); } catch (_) { nv = {}; }
-    try {
-      const hcol = e.app.findCollectionByNameOrId('riwayat');
-      const r = new Record(hcol);
-      r.set('waktu', new Date().toISOString());
-      r.set('aktor', e.auth ? e.auth.id : '');
-      r.set('aksi', aksi);
-      r.set('modul', col);
-      r.set('record_id', e.record.id || '');
-      r.set('nilai_lama', ov);
-      r.set('nilai_baru', nv);
-      r.set('catatan', '');
-      e.app.save(r);
-    } catch (err) { console.log('[riwayat] gagal update', col, String(err)); }
-  } catch (err) { console.log('[hook update]', String(err)); }
+      let aksi = 'ubah';
+      try {
+        const oldA = !!e.record.original().getBool('diarsipkan');
+        const newA = !!e.record.getBool('diarsipkan');
+        if (oldA !== newA) aksi = newA ? 'arsip' : 'pulihkan';
+      } catch (_) {}
+      let ov = null, nv = null;
+      try { ov = JSON.parse(JSON.stringify(e.record.original())); } catch (_) {}
+      try { nv = JSON.parse(JSON.stringify(e.record)); } catch (_) { nv = {}; }
+      try {
+        const hcol = e.app.findCollectionByNameOrId('riwayat');
+        const r = new Record(hcol);
+        r.set('waktu', new Date().toISOString());
+        r.set('aktor', e.auth ? e.auth.id : '');
+        r.set('aksi', aksi);
+        r.set('modul', col);
+        r.set('record_id', e.record.id || '');
+        r.set('nilai_lama', ov);
+        r.set('nilai_baru', nv);
+        r.set('catatan', '');
+        e.app.save(r);
+      } catch (err) { console.log('[riwayat] gagal update', col, String(err)); }
+    } catch (err) { console.log('[hook update]', String(err)); }
+  }
   e.next();
 });
 
@@ -63,6 +69,12 @@ onRecordCreateRequest((e) => {
       const role = e.auth ? e.auth.getString('role') : '';
       if (jenis === 'Penyesuaian' && role !== 'admin') throw new ForbiddenError('Penyesuaian stok hanya oleh admin');
       if (jenis === 'Penyesuaian' && !String(e.record.getString('keterangan') || '').trim()) throw new BadRequestError('Keterangan wajib untuk penyesuaian');
+      if (jenis === 'Penyesuaian') {
+        const arah = String(e.record.getString('arah_penyesuaian') || '').trim();
+        if (arah !== 'Tambah' && arah !== 'Kurang') throw new BadRequestError('Arah penyesuaian wajib dipilih (Tambah/Kurang)');
+      } else {
+        e.record.set('arah_penyesuaian', '');
+      }
       const barangId = e.record.getString('barang');
       const barang = e.app.findRecordById('inventaris_non_perangkat', barangId);
       if (barang.getBool('diarsipkan')) throw new BadRequestError('Barang nonaktif tidak dapat dimutasi');
@@ -71,8 +83,13 @@ onRecordCreateRequest((e) => {
       if (jenis === 'Pengadaan') sesudah = sebelum + jumlah;
       else if (jenis === 'Pemakaian') sesudah = sebelum - jumlah;
       else if (jenis === 'Penyesuaian') {
-        const ket = String(e.record.getString('keterangan') || '').toLowerCase();
-        if (ket.includes('kurang') || ket.includes('minus') || ket.includes('turun') || ket.trim().startsWith('-')) sesudah = sebelum - jumlah; else sesudah = sebelum + jumlah;
+        const arah = String(e.record.getString('arah_penyesuaian') || '').trim();
+        if (arah === 'Kurang') sesudah = sebelum - jumlah;
+        else if (arah === 'Tambah') sesudah = sebelum + jumlah;
+        else {
+          const ket = String(e.record.getString('keterangan') || '').toLowerCase();
+          if (ket.includes('kurang') || ket.includes('minus') || ket.includes('turun') || ket.trim().startsWith('-')) sesudah = sebelum - jumlah; else sesudah = sebelum + jumlah;
+        }
       }
       if (sesudah < 0) throw new BadRequestError('Stok tidak boleh negatif');
       e.record.set('stok_sebelum', sebelum);
@@ -123,26 +140,30 @@ onRecordUpdateRequest((e) => {
 onRecordAfterUpdateSuccess((e) => {
   try {
     const col = e.record.collection().name;
-    const auth = e.auth; if (!auth) { e.next(); return; }
+    const auth = e.auth;
     const progressed = { layanan_gangguan: ['Diproses', 'Selesai'], pemasangan: ['Dikerjakan', 'Selesai'], perbaikan: ['Diproses', 'Selesai'] };
-    if (!progressed[col]) { e.next(); return; }
-    const oldS = e.record.original().getString('status');
-    const newS = e.record.getString('status');
-    if (oldS === newS || progressed[col].indexOf(newS) === -1) { e.next(); return; }
-    let eligible = false;
-    if (col === 'perbaikan') eligible = e.record.getString('teknisi') === auth.id;
-    else eligible = e.record.getString('ditugaskan_ke') === auth.id;
-    if (!eligible) { e.next(); return; }
-    const wita = new Date(Date.now() + 8 * 3600 * 1000);
-    const y = wita.getUTCFullYear(), m = String(wita.getUTCMonth() + 1).padStart(2, '0'), d = String(wita.getUTCDate()).padStart(2, '0');
-    const day = `${y}-${m}-${d}`;
-    const existing = e.app.findRecordsByFilter('absen_hadir', `teknisi = "${auth.id}" && tanggal >= "${day} 00:00:00" && tanggal <= "${day} 23:59:59"`, '', 1, 0);
-    if (existing && existing.length) { e.next(); return; }
-    const ac = e.app.findCollectionByNameOrId('absen_hadir');
-    const r = new Record(ac);
-    r.set('teknisi', auth.id); r.set('tanggal', day + ' 00:00:00'); r.set('jam_masuk', new Date().toISOString());
-    r.set('keterangan', 'Hadir'); r.set('metode', 'Tugas'); r.set('dicatat_oleh', auth.id);
-    e.app.save(r);
+    if (auth && progressed[col]) {
+      const oldS = e.record.original().getString('status');
+      const newS = e.record.getString('status');
+      if (oldS !== newS && progressed[col].indexOf(newS) !== -1) {
+        let eligible = false;
+        if (col === 'perbaikan') eligible = e.record.getString('teknisi') === auth.id;
+        else eligible = e.record.getString('ditugaskan_ke') === auth.id;
+        if (eligible) {
+          const wita = new Date(Date.now() + 8 * 3600 * 1000);
+          const y = wita.getUTCFullYear(), m = String(wita.getUTCMonth() + 1).padStart(2, '0'), d = String(wita.getUTCDate()).padStart(2, '0');
+          const day = `${y}-${m}-${d}`;
+          const existing = e.app.findRecordsByFilter('absen_hadir', `teknisi = "${auth.id}" && tanggal >= "${day} 00:00:00" && tanggal <= "${day} 23:59:59"`, '', 1, 0);
+          if (!(existing && existing.length)) {
+            const ac = e.app.findCollectionByNameOrId('absen_hadir');
+            const r = new Record(ac);
+            r.set('teknisi', auth.id); r.set('tanggal', day + ' 00:00:00'); r.set('jam_masuk', new Date().toISOString());
+            r.set('keterangan', 'Hadir'); r.set('metode', 'Tugas'); r.set('dicatat_oleh', auth.id);
+            e.app.save(r);
+          }
+        }
+      }
+    }
   } catch (err) { console.log('[auto absen]', String(err)); }
   e.next();
 });
