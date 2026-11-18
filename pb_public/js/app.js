@@ -526,6 +526,9 @@
         </tbody></table></div>
         <p class="muted" style="margin:10px 0 0">Pengaturan lain di sistem (akun, data, penugasan, inventaris, usulan, pengumuman, dll.) dapat dikelola melalui menu masing-masing.</p></div>`;
     }
+    if(key==='riwayat' && isAdmin()){
+      extraTop += `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><h3 style="margin:0">Bersihkan Riwayat</h3><p class="muted" style="margin:4px 0 0">Hapus seluruh catatan riwayat aktivitas. Tindakan ini tidak dapat dibatalkan.</p></div><div><button class="btn" id="clearRiwayat">Hapus Semua Riwayat</button></div></div></div>`;
+    }
     if(key==='inventaris_perangkat' && aktif){
       try{
         const all = await pb.collection('inventaris_perangkat').getList(1,500,{filter:'diarsipkan = false'});
@@ -768,6 +771,14 @@
     $('#uApproveEdit')&&($('#uApproveEdit').onclick=async()=>{ const field=$('#uNilai'); try{ let nilai={}; try{ nilai=JSON.parse(field.value||'{}'); }catch(_){ showFieldError(field,'Nilai usulan harus berupa JSON yang valid.'); focusField(field); toast('Nilai usulan bukan JSON yang valid',{type:'error'}); return; } clearFieldError(field); await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'ubah_setujui', nilai_usulan:nilai}}); toast('Usulan diubah & disetujui'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uReject')&&($('#uReject').onclick=async()=>{ const alasan=prompt('Alasan tolak:')||''; try{ await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'tolak', alasan_tolak:alasan}}); toast('Usulan ditolak'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uWithdraw')&&($('#uWithdraw').onclick=async()=>{ try{ await pb.request(`/api/usulan/${state.detail}/withdraw`,{method:'POST'}); toast('Usulan ditarik'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
+    $('#clearRiwayat')&&($('#clearRiwayat').onclick=async()=>{
+      if(!confirm('Hapus SEMUA riwayat aktivitas? Tindakan ini tidak dapat dibatalkan.')) return;
+      try{
+        const r=await pb.request('/api/riwayat/clear',{method:'POST'});
+        toast(`Riwayat dibersihkan (${(r&&r.deleted)||0} data dihapus)`);
+        render();
+      }catch(e){ toast(errorText(e)||'Gagal menghapus riwayat',{type:'error'}); }
+    });
     $('#bulkClear')&&($('#bulkClear').onclick=async()=>{
       if(!confirm('Kosongkan semua penugasan aktif user ini?')) return;
       const uid = state.detail;
