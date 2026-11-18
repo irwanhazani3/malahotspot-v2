@@ -507,8 +507,75 @@
       <div class="card"><h3>Pesan Terbaru</h3>${mine.length?`<div class="table-wrap"><table><tr><th>Waktu</th><th>Dari</th><th>Ke</th><th>Isi</th><th>Foto</th></tr>${mine.map(m=>`<tr><td>${esc(witaDisplay(m.dibuat_pada))}</td><td>${esc(m.pengirim===myId?'Saya':nameOf(state.cache.users,m.pengirim,m.pengirim))}</td><td>${esc(m.penerima===myId?'Saya':nameOf(state.cache.users,m.penerima,m.penerima))}</td><td>${esc(m.isi)}</td><td>${m.foto?`<a href="${esc(pb.fileUrl(m,m.foto))}" target="_blank" rel="noopener">Lihat</a>`:''}</td></tr>`).join('')}</table></div>`:'<div class="muted">Belum ada pesan.</div>'}</div>`;
   }
 
+  async function getPengaturanMap(){
+    const map={};
+    try{
+      const list=await pb.collection('pengaturan').getList(1,200);
+      (list.items||[]).forEach(r=>{ map[r.kunci]=r; });
+    }catch(e){}
+    return map;
+  }
+  function nilaiSetting(rec, def){
+    if(!rec) return def;
+    const v = Object.prototype.hasOwnProperty.call(rec,'nilai') ? rec.nilai : undefined;
+    return (v===null||v===undefined||v==='') ? def : v;
+  }
+  async function pengaturanView(){
+    if(!isAdmin()) return '<div class="card">Khusus admin.</div>';
+    const map = await getPengaturanMap();
+    const intervalQr = Math.max(5, Number(nilaiSetting(map['interval_qr'],30)) || 30);
+    let jamTutup = String(nilaiSetting(map['jam_tutup_absen'],'23:59') || '23:59');
+    if(!/^\d{2}:\d{2}$/.test(jamTutup)) jamTutup='23:59';
+    const intervalSheets = Math.max(1, Number(nilaiSetting(map['interval_sinkron_sheets'],5)) || 5);
+    const retensiRaw = nilaiSetting(map['retensi_riwayat_hari'],0);
+    const retensi = (retensiRaw===0 || retensiRaw==='0' || retensiRaw==='') ? 0 : Math.max(0, Number(retensiRaw) || 0);
+    const lastSyncVal = nilaiSetting(map['sheets_last_sync'],'');
+    let lastSyncTxt = 'Belum pernah';
+    if(lastSyncVal){
+      const ms = Number(lastSyncVal);
+      if(!isNaN(ms) && ms>0){ try{ lastSyncTxt = witaDisplay(new Date(ms).toISOString()); }catch(e){ lastSyncTxt = String(lastSyncVal); } }
+      else lastSyncTxt = String(lastSyncVal);
+    }
+    return `<div class="card"><h2 style="margin:0 0 6px">Pengaturan Sistem</h2><p class="muted" style="margin:0">Atur pengaturan aplikasi dengan mudah. Ubah nilai yang diinginkan lalu klik <b>Simpan Pengaturan</b>.</p></div>
+    <form id="pengaturanForm" novalidate>
+      <div class="card">
+        <h3 style="margin-top:0">Absensi (QR)</h3>
+        <p class="muted" style="margin-top:-2px">Pengaturan untuk absen kehadiran menggunakan QR.</p>
+        <label for="set_interval_qr">Masa berlaku kode QR (detik)</label>
+        <input id="set_interval_qr" name="interval_qr" type="number" min="5" step="1" value="${esc(String(intervalQr))}">
+        <div class="muted" style="font-size:.82rem;margin-top:4px">Kode QR akan diperbarui otomatis setiap beberapa detik. Contoh umum: <b>30</b> detik.</div>
+        <label for="set_jam_tutup">Batas akhir absen (jam, WITA)</label>
+        <input id="set_jam_tutup" name="jam_tutup_absen" type="time" value="${esc(jamTutup)}">
+        <div class="muted" style="font-size:.82rem;margin-top:4px">Setelah jam ini, absen lewat QR tidak diterima. Contoh: <b>23:59</b>.</div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Sinkron Google Sheets</h3>
+        <p class="muted" style="margin-top:-2px">Pengaturan pengiriman data ke Google Sheets (jika sudah dikonfigurasi di server).</p>
+        <label for="set_interval_sheets">Seberapa sering sinkron otomatis (menit)</label>
+        <input id="set_interval_sheets" name="interval_sinkron_sheets" type="number" min="1" step="1" value="${esc(String(intervalSheets))}">
+        <div class="muted" style="font-size:.82rem;margin-top:4px">Contoh: <b>5</b> berarti sinkron otomatis sekitar setiap 5 menit.</div>
+        <label>Status sinkron terakhir</label>
+        <div class="card" style="padding:12px 14px;background:var(--bg-surface-alt);box-shadow:none"><b>${esc(lastSyncTxt)}</b><div class="muted" style="font-size:.82rem;margin-top:2px">Informasi ini diperbarui otomatis oleh sistem.</div></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Riwayat Aktivitas</h3>
+        <p class="muted" style="margin-top:-2px">Atur agar riwayat lama dibersihkan otomatis supaya data tidak menumpuk.</p>
+        <label for="set_retensi">Simpan riwayat selama (hari)</label>
+        <input id="set_retensi" name="retensi_riwayat_hari" type="number" min="0" step="1" value="${esc(String(retensi))}">
+        <div class="muted" style="font-size:.82rem;margin-top:4px">Isi <b>0</b> jika tidak ingin hapus otomatis. Contoh: <b>30</b> untuk menyimpan riwayat 30 hari terakhir (yang lebih lama dihapus otomatis setiap hari).</div>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center;gap:10px">
+          <div class="muted" style="font-size:.9rem">Perubahan disimpan dan langsung digunakan oleh sistem.</div>
+          <button class="btn btn-primary" type="submit">Simpan Pengaturan</button>
+        </div>
+      </div>
+    </form>`;
+  }
+
   function getMod(k){ return MODULES.find(m=>m.key===k); }
   async function moduleView(key){
+    if(key==='pengaturan') return pengaturanView();
     if(state.detail) return detailView(key, state.detail);
     const mod=getMod(key); if(!mod) return '<div class="card">Modul tidak ditemukan.</div>';
     if(mod.admin && !isAdmin()) return '<div class="card">Khusus admin.</div>';
@@ -829,6 +896,49 @@
         render();
       }catch(e){ toast(errorText(e)||'Gagal menghapus riwayat',{type:'error'}); }
     });
+    const pengaturanForm=$('#pengaturanForm');
+    if(pengaturanForm){
+      pengaturanForm.onsubmit=async(ev)=>{
+        ev.preventDefault();
+        const form=ev.target;
+        const submitBtn=form.querySelector('button[type="submit"]');
+        const intervalQr=Math.round(Number($('#set_interval_qr').value));
+        const jamTutup=String($('#set_jam_tutup').value||'').trim();
+        const intervalSheets=Math.round(Number($('#set_interval_sheets').value));
+        const retensi=Math.round(Number($('#set_retensi').value));
+
+        clearFormErrors(form);
+        const errs=[];
+        if(!(intervalQr>=5)) errs.push({el:$('#set_interval_qr'), msg:'Masa berlaku kode QR minimal 5 detik.'});
+        if(!/^\d{2}:\d{2}$/.test(jamTutup)) errs.push({el:$('#set_jam_tutup'), msg:'Batas akhir absen harus berupa jam yang valid (contoh 23:59).'});
+        if(!(intervalSheets>=1)) errs.push({el:$('#set_interval_sheets'), msg:'Interval sinkron minimal 1 menit.'});
+        if(!(retensi>=0) || isNaN(retensi)) errs.push({el:$('#set_retensi'), msg:'Lama simpan riwayat harus 0 (nonaktif) atau lebih.'});
+        if(errs.length){
+          errs.forEach(er=>showFieldError(er.el,er.msg));
+          showFormAlert(form, errs.map(er=>er.msg));
+          focusField(errs[0].el);
+          toast('Belum bisa disimpan: '+errs[0].msg,{type:'error'});
+          return;
+        }
+
+        await withSubmitState(form,submitBtn,async()=>{
+          try{
+            const map=await getPengaturanMap();
+            const upsert=async(kunci,nilai)=>{
+              const rec=map[kunci];
+              if(rec && rec.id) await pb.collection('pengaturan').update(rec.id,{kunci,nilai});
+              else await pb.collection('pengaturan').create({kunci,nilai});
+            };
+            await upsert('interval_qr', intervalQr);
+            await upsert('jam_tutup_absen', jamTutup);
+            await upsert('interval_sinkron_sheets', intervalSheets);
+            await upsert('retensi_riwayat_hari', retensi);
+            toast('Pengaturan berhasil disimpan');
+            render();
+          }catch(e){ handleSubmitError(e,form); }
+        });
+      };
+    }
     $('#bulkClear')&&($('#bulkClear').onclick=async()=>{
       if(!confirm('Kosongkan semua penugasan aktif user ini?')) return;
       const uid = state.detail;
