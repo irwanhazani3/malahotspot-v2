@@ -1005,6 +1005,20 @@
     });
   }
 
+  function initTaskDateHelpers(form, key){
+    if(!form) return;
+    if(key === 'pemasangan'){
+      const statusEl = fieldEl(form,'status');
+      const tanggalEl = fieldEl(form,'tanggal');
+      if(!statusEl || !tanggalEl || statusEl.__autoTanggal) return;
+      statusEl.__autoTanggal = true;
+      const todayWita = ()=> new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
+      const apply = ()=>{ if(String(statusEl.value)==='Selesai') tanggalEl.value = todayWita(); };
+      statusEl.addEventListener('change', apply);
+      // if form already shows Selesai (e.g. user opened to finish), ensure date is today on next save intent
+    }
+  }
+
   async function bindActions(){
     const doSearch=()=>{ if(!$('#searchBox')) return; state.search=$('#searchBox').value.trim();state.page=1;render(); };
     $('#btnSearch')&&($('#btnSearch').onclick=doSearch);
@@ -1020,6 +1034,7 @@
     initMaterialEditor();
     initBarangNameHelper($('#editForm')||$('#newForm'), state.view);
     initQuickPelanggan($('#editForm')||$('#newForm'));
+    initTaskDateHelpers($('#editForm')||$('#newForm'), state.view);
     const editForm=$('#editForm');
     if(editForm) attachValidation(editForm,state.view,false);
     editForm&&(editForm.onsubmit=async(ev)=>{
@@ -1203,6 +1218,7 @@
     initMaterialEditor();
     initBarangNameHelper(form,key);
     initQuickPelanggan(form);
+    initTaskDateHelpers(form,key);
     attachValidation(form,key,true);
     const submitBtn=form ? form.querySelector('button[type="submit"]') : null;
     form.onsubmit=async(ev)=>{ ev.preventDefault(); const f=ev.target; if(!validateAndShow(f,key,true)) return; await withSubmitState(f,submitBtn,async()=>{ try{ const fd=new FormData(f); await pb.collection(key).create(formBody(key,fd,true)); toast('Data berhasil ditambahkan'); state.cache={}; render(); }catch(e){handleSubmitError(e,f);} }); };

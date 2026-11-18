@@ -1,5 +1,13 @@
 /// <reference path="../pb_data/types.d.ts" />
 
+function witaDateStr(){
+  const w = new Date(Date.now() + 8 * 3600 * 1000);
+  const y = w.getUTCFullYear();
+  const m = String(w.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(w.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 onRecordUpdateRequest((e) => {
   try{
     const col = e.collection && e.collection.name;
@@ -8,6 +16,9 @@ onRecordUpdateRequest((e) => {
       const newStatus = e.record.getString('status');
       const oldDev = String(e.record.original().get('perangkat') || '');
       const newDev = String(e.record.get('perangkat') || '');
+      if(col === 'pemasangan' && newStatus === 'Selesai' && oldStatus !== 'Selesai'){
+        e.record.set('tanggal', witaDateStr() + ' 00:00:00');
+      }
       if(newStatus === 'Selesai' && (oldStatus !== 'Selesai' || oldDev !== newDev)){
         const { validateDeviceAssignment } = require(__hooks + '/lib/task_device.js');
         validateDeviceAssignment(e.app, e.record);
@@ -24,6 +35,9 @@ onRecordCreateRequest((e) => {
   try{
     const col = e.collection && e.collection.name;
     if((col === 'pemasangan' || col === 'perbaikan') && e.record.getString('status') === 'Selesai'){
+      if(col === 'pemasangan'){
+        e.record.set('tanggal', witaDateStr() + ' 00:00:00');
+      }
       const { validateDeviceAssignment } = require(__hooks + '/lib/task_device.js');
       validateDeviceAssignment(e.app, e.record);
     }
