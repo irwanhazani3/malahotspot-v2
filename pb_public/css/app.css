@@ -93,6 +93,12 @@ th{color:var(--text2);font-weight:600;white-space:nowrap;background:var(--bg-sur
 tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--bg-elevated)}
 .muted{color:var(--muted)}.error{color:var(--danger)}.ok{color:var(--ok)}
+input.invalid,select.invalid,textarea.invalid{border-color:var(--danger)!important;box-shadow:0 0 0 1px var(--danger)}
+.field-error{color:var(--danger);font-size:.8rem;font-weight:600;line-height:1.35;margin:5px 0 0}
+.form-alert{background:var(--rose-soft);border:1px solid var(--rose-border);color:var(--text);border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:.9rem}
+.form-alert b{color:var(--danger)}
+.form-alert ul{margin:6px 0 0;padding-left:20px}
+.form-alert li{margin:2px 0}
 .badge{display:inline-block;padding:3px 10px;border-radius:999px;background:var(--bg-elevated);font-size:.75rem;white-space:nowrap;color:var(--text2);vertical-align:middle;border:1px solid var(--border)}
 .badge.low{background:var(--rose-soft);color:var(--rose);border-color:var(--rose-border)}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
@@ -103,6 +109,8 @@ pre{max-width:100%;overflow:auto;background:var(--bg-surface-alt);border:1px sol
 hr{border:none;border-top:1px solid var(--border);margin:16px 0}
 #toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50;max-width:min(360px,calc(100vw - 32px))}
 .toast{background:var(--bg-elevated);color:var(--text);padding:12px 14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-modal);word-break:break-word;cursor:pointer}
+.toast-error{background:var(--rose-soft);border-color:var(--rose-border)}
+.toast-error::before{content:'⚠ ';color:var(--danger);font-weight:700}
 #qrBox .card{display:flex;flex-direction:column;align-items:center;background:var(--bg-surface-alt)}
 #qrImg img,#qrImg canvas{max-width:100%;height:auto}
 .card > .row[style*="justify-content:space-between"]{align-items:center;gap:10px}
