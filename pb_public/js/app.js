@@ -48,7 +48,8 @@
     nilai_usulan:'Nilai Usulan', alasan_tolak:'Alasan Tolak', email:'Email', telepon:'Telepon',
     role:'Role', aktif:'Aktif', password:'Password', passwordConfirm:'Konfirmasi Password',
     judul:'Judul', isi:'Isi', pembuat:'Pembuat', penerima:'Penerima', foto:'Foto',
-    material_pemakaian:'Material Non-Perangkat'
+    material_pemakaian:'Material Non-Perangkat',
+    kunci:'Kunci', nilai:'Nilai', dibuat_pada:'Dibuat Pada', diubah_pada:'Diubah Pada'
   };
   const REQUIRED = {
     pelanggan:['nama','nowa'],
@@ -64,7 +65,8 @@
     users:['nama','email','role'],
     pengumuman:['judul','isi'],
     pesan_langsung:['penerima','isi'],
-    komentar_tugas:['isi']
+    komentar_tugas:['isi'],
+    pengaturan:['kunci']
   };
 
   function fieldLabel(name){
@@ -273,6 +275,7 @@
     {key:'inventaris_non_perangkat', label:'Inv. Non Perangkat', cols:['nama_barang','satuan','stok','stok_minimum']},
     {key:'mutasi_inventaris', label:'Mutasi Inventaris', cols:['barang','jenis','jumlah','stok_sesudah','tanggal','keterangan']},
     {key:'usulan_perubahan', label:'Usulan', cols:['modul','record_id','status','pemohon']},
+    {key:'pengaturan', label:'Pengaturan', admin:true, cols:['kunci','nilai','diubah_pada']},
     {key:'riwayat', label:'Riwayat', admin:true, cols:['waktu','aktor','aksi','modul','record_id']},
   ];
 
@@ -482,7 +485,7 @@
     if(state.detail) return detailView(key, state.detail);
     const mod=getMod(key); if(!mod) return '<div class="card">Modul tidak ditemukan.</div>';
     if(mod.admin && !isAdmin()) return '<div class="card">Khusus admin.</div>';
-    const noArchive = (key === 'riwayat');
+    const noArchive = (key === 'riwayat' || key === 'pengaturan');
     const aktif = state.filterAktif!==false;
     let filter = '';
     if(key === 'users'){ filter = aktif ? 'aktif = true' : 'aktif = false'; }
@@ -501,16 +504,28 @@
         mutasi_inventaris:['id','jenis','keterangan','referensi_id','referensi_modul','barang.nama_barang'],
         usulan_perubahan:['id','modul','record_id','status','alasan_tolak','pemohon.nama'],
         riwayat:['id','modul','record_id','aksi','catatan','aktor.nama'],
+        pengaturan:['id','kunci'],
         pengumuman:['id','judul','isi']
       };
       const fields = smap[key] || ['id'];
       const q = fields.map(f=>`${f} ~ "${sv}"`).join(' || ');
       filter += filter ? ` && (${q})` : `(${q})`;
     }
-    const sort = key==='users' ? '-created' : (key==='riwayat' ? '-waktu' : '-dibuat_pada');
+    const sort = key==='users' ? '-created' : (key==='riwayat' ? '-waktu' : (key==='pengaturan' ? '-diubah_pada' : '-dibuat_pada'));
     let list={items:[],page:1,totalPages:1,totalItems:0}; try{ list=await pb.collection(key).getList(state.page||1,50,{filter, sort});}catch(e){ return `<div class="card"><h2>${esc(mod.label)}</h2><div class="error">${esc(e.message)}</div></div>`; }
     const cols=mod.cols; const rows=list.items.map(it=>`<tr>${cols.map(c=>`<td>${cell(key,c,it)}</td>`).join('')}<td><button class="btn" data-open="${key}:${it.id}">Buka</button></td></tr>`).join('');
     let extraTop = '';
+    if(key==='pengaturan'){
+      extraTop = `<div class="card"><h3 style="margin-top:0">Panduan Pengaturan Sistem</h3>
+        <p class="muted" style="margin-top:0">Ubah nilai pada daftar di bawah, atau tambah kunci baru bila diperlukan. Kolom <b>Nilai</b> disimpan sebagai JSON (contoh angka: <code>30</code>, teks: <code>"23:59"</code>).</p>
+        <div class="table-wrap"><table><thead><tr><th>Kunci</th><th>Fungsi</th><th>Contoh Nilai</th></tr></thead><tbody>
+          <tr><td><code>interval_qr</code></td><td>Interval berlaku token QR absen (detik)</td><td><code>30</code></td></tr>
+          <tr><td><code>jam_tutup_absen</code></td><td>Batas waktu absen (WITA)</td><td><code>"23:59"</code></td></tr>
+          <tr><td><code>interval_sinkron_sheets</code></td><td>Interval sinkron otomatis ke Google Sheets (menit)</td><td><code>5</code></td></tr>
+          <tr><td><code>sheets_last_sync</code></td><td>Waktu sinkron Sheets terakhir (otomatis oleh sistem)</td><td>—</td></tr>
+        </tbody></table></div>
+        <p class="muted" style="margin:10px 0 0">Pengaturan lain di sistem (akun, data, penugasan, inventaris, usulan, pengumuman, dll.) dapat dikelola melalui menu masing-masing.</p></div>`;
+    }
     if(key==='inventaris_perangkat' && aktif){
       try{
         const all = await pb.collection('inventaris_perangkat').getList(1,500,{filter:'diarsipkan = false'});
@@ -588,7 +603,8 @@
     if(['pelanggan'].includes(c)) return esc(nameOf(state.cache.pelanggan,v,v));
     if(['teknisi','ditugaskan_ke','pemohon','peninjau','aktor','dicatat_oleh','pengirim','penerima'].includes(c)) return esc(nameOf(state.cache.users,v,v));
     if(c==='barang') return esc(nameOf(state.cache.barang,v,v));
-    if(c.includes('tanggal')||c==='waktu'||c==='jam_masuk'||c==='dibaca_pada') return esc(witaDisplay(v));
+    if(c.includes('tanggal')||c==='waktu'||c==='jam_masuk'||c==='dibaca_pada'||c==='dibuat_pada'||c==='diubah_pada'||c==='diarsipkan_pada'||c==='diputuskan') return esc(witaDisplay(v));
+    if(typeof v === 'object') return esc(JSON.stringify(v));
     return esc(String(v).slice(0,80));
   }
   function canCreate(key){ if(key==='riwayat') return false; if(key==='pengaturan'||key==='pengumuman') return isAdmin(); return true; }
@@ -651,6 +667,7 @@
     if(key==='mutasi_inventaris') note='<p class="muted">Stok sebelum/sesudah dihitung otomatis. Untuk Penyesuaian, isi <b>selisih</b>: sistem 10 dan hasil hitung 8 berarti Kurang 2, bukan 8.</p>';
     if(key==='inventaris_non_perangkat') note='<p class="muted">Stok awal 0. Stok hanya bertambah lewat Mutasi Inventaris jenis Pengadaan.</p>';
     if(key==='pemasangan' || key==='perbaikan') note='<p class="muted">Saat status Selesai, perangkat terpilih otomatis menjadi Terpasang di lokasi pelanggan. Perangkat yang sudah terpasang di pelanggan lain akan ditolak.</p>';
+    if(key==='pengaturan') note='<p class="muted">Isi <b>Nilai</b> dalam format JSON. Contoh: angka <code>30</code>, teks <code>"23:59"</code>. Perubahan kunci sistem dapat memengaruhi perilaku aplikasi.</p>';
     return note+(map[key]||[]).join('')+`<div style="margin-top:8px"><button class="btn" type="submit">Simpan</button></div>`;
   }
 
