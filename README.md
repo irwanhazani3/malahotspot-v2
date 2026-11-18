@@ -11,7 +11,10 @@ tanpa build step.
 
 Sudah berjalan dan diuji:
 
-- Login admin/teknisi, akun nonaktif tidak bisa login, password minimal 5.
+- Login admin/teknisi, akun nonaktif tidak bisa login, password minimal 8
+  (batas minimum PocketBase 0.40+).
+- Admin aplikasi dapat mengubah nama, email, telepon, peran, status aktif, dan
+  password akun dari menu **Akun**, tanpa login sebagai superuser PocketBase.
 - Peran dan hak akses per modul, arsip/pulihkan, serta Riwayat audit.
 - Tugas saya, penugasan admin, komentar tugas, pesan langsung, pengumuman.
 - Mutasi inventaris (Pengadaan/Pemakaian/Penyesuaian) dengan stok konsisten.

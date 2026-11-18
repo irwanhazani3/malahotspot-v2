@@ -14,7 +14,8 @@ internal (komentar tugas, pesan langsung, pengumuman).
 - Hak lihat data: admin dan teknisi dapat melihat semua data di semua modul.
   Pembatasan teknisi hanya berlaku pada aksi tambah/ubah/arsip sesuai aturan
   modul.
-- Pendaftaran publik dimatikan. Akun dibuat oleh admin.
+- Pendaftaran publik dimatikan. Akun dibuat dan dikelola oleh admin, termasuk
+  mengubah nama, email, telepon, peran, status aktif, dan password.
 - Akun memiliki field: nama (wajib), peran (admin/teknisi), telepon (opsional),
   dan aktif. Akun dapat dinonaktifkan.
 - Petugas nonaktif tidak dapat login. Sebelum atau saat menonaktifkan, admin
@@ -24,7 +25,7 @@ internal (komentar tugas, pesan langsung, pengumuman).
   mengubah sampai ditugaskan ulang).
 - Data dan riwayat atas nama teknisi nonaktif tetap tersimpan. Usulan Menunggu
   milik teknisi nonaktif tetap dapat diputuskan admin.
-- Kata sandi minimal 5 karakter.
+- Kata sandi minimal 8 karakter (batas minimum PocketBase 0.40+).
 
 ## Aturan perubahan data
 - Data master: Pelanggan, Inventaris Perangkat, Inventaris Non Perangkat.

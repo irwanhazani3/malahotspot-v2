@@ -414,7 +414,7 @@
       inventaris_non_perangkat:[inp('nama_barang','Nama Barang'),inp('satuan','Satuan'),inp('stok','Stok (otomatis)','number',null,true),inp('stok_minimum','Stok Minimum','number'),inp('keterangan','Keterangan','textarea')],
       mutasi_inventaris:[select('barang','Barang',barang,b=>b.id,b=>`${b.nama_barang} (${b.satuan})`,rec.barang),inp('jenis','Jenis','select',['Pengadaan','Pemakaian','Penyesuaian']),inp('jumlah','Jumlah','number'),inp('tanggal','Tanggal','date'),inp('arah_penyesuaian','Arah Penyesuaian (wajib jika Penyesuaian)','select',['','Tambah','Kurang']),inp('referensi_modul','Ref Modul','select',['-','Perbaikan','Pemasangan']),inp('referensi_id','Ref ID'),inp('keterangan','Keterangan','textarea')],
       usulan_perubahan:[inp('modul','Modul (koleksi)'),inp('record_id','Record ID'),inp('nilai_usulan','Nilai Usulan (JSON)','textarea'),inp('status','Status','select',['Menunggu','Disetujui','Ditolak','Ditarik']),inp('alasan_tolak','Alasan Tolak','textarea')],
-      users:[inp('nama','Nama'),inp('email','Email','email'),inp('telepon','Telepon'),inp('role','Role','select',['admin','teknisi']),`<label>Aktif</label><select name="aktif"><option value="true" ${String(rec.aktif)!=='false'?'selected':''}>true</option><option value="false" ${String(rec.aktif)==='false'?'selected':''}>false</option></select>`, (rec && rec.id ? `<label>Password baru (kosongkan jika tidak diubah)</label><input name="password" type="password" minlength="5"><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="5">` : `<label>Password (min 5)</label><input name="password" type="password" minlength="5" required><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="5" required>`)],
+      users:[inp('nama','Nama'),inp('email','Email','email'),inp('telepon','Telepon'),inp('role','Role','select',['admin','teknisi']),`<label>Aktif</label><select name="aktif"><option value="true" ${String(rec.aktif)!=='false'?'selected':''}>true</option><option value="false" ${String(rec.aktif)==='false'?'selected':''}>false</option></select>`, (rec && rec.id ? `<label>Password baru (kosongkan jika tidak diubah, min 8)</label><input name="password" type="password" minlength="8" autocomplete="new-password"><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="8" autocomplete="new-password">` : `<label>Password (min 8)</label><input name="password" type="password" minlength="8" autocomplete="new-password" required><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="8" autocomplete="new-password" required>`)],
             pengaturan:[inp('kunci','Kunci'),inp('nilai','Nilai (JSON/teks)','textarea')],
     };
     return (map[key]||[]).join('')+`<div style="margin-top:8px"><button class="btn" type="submit">Simpan</button></div>`;
@@ -469,6 +469,10 @@
       const key=state.view, id=state.detail;
       try{
         const fd = new FormData(ev.target);
+        if(key==='users'){
+          const pwErr = passwordError(fd);
+          if(pwErr){ toast(pwErr); return; }
+        }
         const body = formBody(key, fd);
         const master = ['pelanggan','inventaris_perangkat','inventaris_non_perangkat'];
         if(master.includes(key) && !isAdmin()){
@@ -493,7 +497,7 @@
         }
         await pb.collection(key).update(id, body);
         toast('Tersimpan'); state.cache={}; render();
-      }catch(e){ toast(e.message||'Gagal menyimpan'); }
+      }catch(e){ toast(errorText(e)); }
     });
     $('#commentForm')&&($('#commentForm').onsubmit=async(ev)=>{ ev.preventDefault(); const fd=new FormData(ev.target); fd.set('modul_referensi',state.view); fd.set('referensi_id',state.detail); fd.set('pengirim',me().id); try{ await pb.collection('komentar_tugas').create(fd); toast('Komentar terkirim'); render(); }catch(e){toast(e.message);} });
     $('#annForm')&&($('#annForm').onsubmit=async(ev)=>{ ev.preventDefault(); const fd=new FormData(ev.target); fd.set('pembuat',me().id); fd.set('diarsipkan','false'); try{ await pb.collection('pengumuman').create(fd); toast('Pengumuman dibuat'); render(); }catch(e){toast(e.message);} });
@@ -546,9 +550,28 @@
     const div=document.createElement('div'); div.className='card'; div.innerHTML=`<h3>Tambah ${esc(getMod(key)?.label||key)}</h3><form id="newForm">${editorForm(key,{})}</form><button class="btn" id="cancelNew" type="button">Batal</button>`;
     $('.container').prepend(div); $('#cancelNew').onclick=()=>div.remove();
     initMaterialEditor();
-    $('#newForm').onsubmit=async(ev)=>{ ev.preventDefault(); try{ await pb.collection(key).create(formBody(key,new FormData(ev.target), true)); toast('Ditambahkan'); state.cache={}; render(); }catch(e){toast(e.message);} };
+    $('#newForm').onsubmit=async(ev)=>{ ev.preventDefault(); try{ const fd=new FormData(ev.target); if(key==='users'){ const pwErr=passwordError(fd); if(pwErr){ toast(pwErr); return; } } await pb.collection(key).create(formBody(key,fd,true)); toast('Ditambahkan'); state.cache={}; render(); }catch(e){toast(errorText(e));} };
   }
 
+  function errorText(e){
+    const data = e && e.data;
+    const details = data && typeof data === 'object' && !Array.isArray(data)
+      ? Object.entries(data).map(([k,v])=>{
+          if(!v || typeof v !== 'object') return '';
+          const msg = v.message || v.code || '';
+          return msg ? `${k}: ${msg}` : '';
+        }).filter(Boolean).join('; ')
+      : '';
+    return details ? `${(e && e.message) || 'Gagal'} (${details})` : ((e && e.message) || (e && String(e)) || 'Gagal');
+  }
+  function passwordError(fd){
+    const pw = String(fd.get('password') || '');
+    const pwc = String(fd.get('passwordConfirm') || '');
+    if(!pw && !pwc) return '';
+    if(pw.length < 8) return 'Password minimal 8 karakter';
+    if(pw !== pwc) return 'Konfirmasi password tidak sama';
+    return '';
+  }
   function formBody(key, fd, isNew=false){
     let hasFile=false; for(const [k,v] of fd.entries()){ if(v instanceof File && v.size>0){ hasFile=true; if(v.size>2*1024*1024) throw new Error('Ukuran foto maksimal 2MB'); } }
     const body = hasFile ? fd : {};
