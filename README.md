@@ -17,9 +17,14 @@ Sudah berjalan dan diuji:
   password akun dari menu **Akun**, tanpa login sebagai superuser PocketBase.
 - Peran dan hak akses per modul, arsip/pulihkan, serta Riwayat audit.
 - Tugas saya, penugasan admin, komentar tugas, pesan langsung, pengumuman.
-- Mutasi inventaris (Pengadaan/Pemakaian/Penyesuaian) dengan stok konsisten.
-- Material tugas otomatis mengurangi stok saat tugas Selesai.
-- Perangkat tugas otomatis menjadi `Terpasang` beserta lokasi pelanggan.
+- Mutasi inventaris (Pengadaan/Pemakaian/Penyesuaian) dengan stok konsisten:
+  stok awal 0, hanya berubah lewat mutasi, dan perubahan yang membuat stok
+  negatif di titik mana pun ditolak. Penyesuaian memakai **selisih**, bukan
+  stok akhir.
+- Material tugas otomatis mengurangi stok saat tugas Selesai, sekali saja;
+  baris material duplikat dijumlahkan lebih dulu.
+- Perangkat tugas otomatis menjadi `Terpasang` beserta lokasi pelanggan; SN
+  perangkat unik dan perangkat yang sudah terpasang di pelanggan lain ditolak.
 - Absen lewat QR, tugas, dan mandiri; waktu ditampilkan dalam WITA.
 - Validasi foto (JPG/PNG/WebP, maks. 2 MB) di server.
 - Sinkron arsip database ke Google Sheets secara terjadwal/manual; baris lama
@@ -164,6 +169,47 @@ spreadsheet.
 Jika balasan bukan JSON atau berisi `Token tidak cocok`, periksa kembali
 Script Properties, versi deployment, akses “Anyone”, dan URL yang berakhiran
 `/exec`.
+
+## Aturan inventaris
+
+**Stok barang non perangkat**
+
+1. Buat barang dengan stok **0**. Stok awal tidak boleh diisi langsung.
+2. Tambah stok lewat **Mutasi Inventaris → Pengadaan**.
+3. Kurangi stok lewat **Pemakaian**. Sistem menolak jika stok tidak cukup.
+4. Untuk koreksi opname, pilih **Penyesuaian** dan isi **selisih**, bukan stok
+   akhir. Contoh: stok sistem 10, hasil hitung 8 → pilih `Kurang` dan isi `2`.
+5. Stok sebelum/sesudah dihitung otomatis secara kronologis. Jika menghapus
+   atau mengarsipkan Pengadaan membuat Pemakaian setelahnya negatif, aksi
+   ditolak. Batalkan/ubah Pemakaian terlebih dahulu, baru Pengadaan.
+
+Stok tidak bisa diubah dari form data master. Perubahan langsung ditolak agar
+tidak terjadi selisih antara stok dan riwayat mutasi.
+
+**Material tugas**
+
+- Material pada Perbaikan/Pemasangan divalidasi sebagai total per barang. Dua
+  baris 6 + 6 dengan stok 10 ditolak karena totalnya 12.
+- Pemakaian dicatat otomatis saat status menjadi **Selesai**, sekali saja.
+  Edit tugas setelahnya tidak mengurangi stok lagi.
+- Tugas Selesai tanpa material tidak dikunci. Material bisa ditambahkan
+  kemudian dan akan dicatat saat disimpan.
+- Tanggal tugas ikut urutan stok. Material bertanggal mundur yang memakai stok
+  yang belum ada pada tanggal itu ditolak.
+- Jika pencatatan material gagal, seluruh mutasi material dibatalkan dan tanda
+  `material_tercatat` tidak diset.
+
+**Perangkat tugas**
+
+- SN perangkat opsional, tetapi jika diisi harus unik (spasi dirapikan dan
+  huruf besar/kecil dianggap sama).
+- Saat tugas Selesai, perangkat terpilih menjadi `Terpasang` di lokasi
+  pelanggan. Perangkat yang sudah terpasang di pelanggan lain ditolak.
+- Perangkat `Nonaktif`/diarsipkan tidak dapat dipilih; perangkat `Rusak` tidak
+  dapat dipilih untuk Pemasangan.
+- Jika data lama sudah memiliki SN duplikat, migrasi index unik dilewati agar
+  server tetap bisa start. Rapikan SN duplikat lewat menu Inventaris Perangkat;
+  hook tetap mencegah duplikat baru.
 
 ## Test
 

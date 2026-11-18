@@ -127,7 +127,9 @@ Aturan relasi saat nonaktif:
 
 5. Inventaris Perangkat (aset per unit)
    - nama (wajib), tipe (opsional)
-   - SN/serial number (opsional, unik jika diisi)
+   - SN/serial number (opsional; jika diisi harus unik). SN dirapikan
+     (trim spasi) dan dibandingkan tanpa membedakan huruf besar/kecil.
+     Migrasi menambahkan partial unique index untuk SN yang tidak kosong.
    - kondisi (Baik / Terpasang / Rusak / Nonaktif)
    - lokasi/pemegang (opsional, teks; mis. gudang, nama pelanggan/teknisi)
    - foto perangkat (opsional)
@@ -145,11 +147,14 @@ Aturan relasi saat nonaktif:
 6. Inventaris Non Perangkat (stok barang habis pakai/massal)
    - nama barang (wajib)
    - satuan (wajib, mis. meter, pcs, roll)
-   - stok (angka, default 0) — jumlah tersedia saat ini, tidak diedit langsung
-   - stok minimum (angka, opsional) — batas peringatan stok menipis
+   - stok (angka, default 0) — jumlah tersedia saat ini, tidak diedit langsung.
+     Saat record dibuat, stok awal **wajib 0**; penambahan stok awal dilakukan
+     melalui Mutasi Inventaris jenis Pengadaan.
+   - stok minimum (angka, opsional, tidak boleh negatif) — batas peringatan
+     stok menipis
    - keterangan (opsional)
    - Stok berubah hanya melalui Mutasi Inventaris dan tidak boleh bernilai
-     negatif.
+     negatif. Perubahan stok langsung lewat create/update data master ditolak.
 
 7. Pemasangan
    - pelanggan (dipilih dari daftar Pelanggan aktif), tanggal
@@ -159,10 +164,13 @@ Aturan relasi saat nonaktif:
 8. Mutasi Inventaris (khusus Inventaris Non Perangkat)
    - barang (relasi ke Inventaris Non Perangkat aktif, wajib)
    - jenis (Pengadaan / Pemakaian / Penyesuaian, wajib)
-   - jumlah (angka > 0, wajib)
+   - jumlah (angka > 0, wajib). Untuk Penyesuaian, jumlah adalah **selisih**,
+     bukan stok akhir. Contoh: stok sistem 10, hasil hitung 8 → isi Kurang 2.
+   - arah penyesuaian (Tambah / Kurang; wajib untuk Penyesuaian, kosong untuk
+     jenis lain)
    - stok sebelum (angka, otomatis)
    - stok sesudah (angka, otomatis)
-   - tanggal (wajib)
+   - tanggal (wajib; menentukan urutan kronologis)
    - referensi modul (opsional: Perbaikan / Pemasangan / -)
    - referensi id (opsional, id record terkait)
    - keterangan (wajib untuk Penyesuaian; opsional untuk Pengadaan/Pemakaian)
@@ -315,23 +323,65 @@ Aturan relasi saat nonaktif:
 
 ## Aturan mutasi inventaris
 - Berlaku untuk Inventaris Non Perangkat. Stok berubah hanya melalui Mutasi
-  Inventaris.
+  Inventaris; create/update data master yang mengubah stok ditolak.
+- Stok dihitung dari 0 menggunakan seluruh mutasi aktif, diurutkan berdasarkan
+  tanggal lalu waktu pembuatan. Mutasi yang diarsipkan tidak ikut dihitung.
 - Jenis mutasi:
   - Pengadaan: `stok sesudah = stok sebelum + jumlah`.
-  - Pemakaian: `stok sesudah = stok sebelum - jumlah`; ditolak jika jumlah
-    melebihi stok tersedia (stok tidak boleh negatif).
-  - Penyesuaian: koreksi selisih/opname (tambah atau kurang) dengan keterangan
-    wajib, contoh "selisih opname gudang".
+  - Pemakaian: `stok sesudah = stok sebelum - jumlah`.
+  - Penyesuaian: koreksi **selisih** opname dengan arah Tambah atau Kurang;
+    keterangan wajib, contoh "selisih opname gudang".
+- Setiap create, ubah, arsip, pulihkan, atau hapus mutasi disimulasikan lebih
+  dulu terhadap seluruh riwayat. Jika ada satu titik dalam urutan kronologis
+  yang membuat stok negatif, perubahan **ditolak** dan stok tidak diubah.
+  Stok negatif tidak pernah dibulatkan menjadi 0.
+- Menghapus atau mengarsipkan Pengadaan yang sudah dipakai dapat ditolak karena
+  Pemakaian setelahnya akan menjadi negatif. Urutan koreksi yang benar adalah
+  membatalkan/mengubah mutasi Pemakaian terlebih dahulu, baru Pengadaan.
 - Hak mutasi: teknisi dan admin dapat menambah Pengadaan/Pemakaian; hanya admin
-  dapat menambah Penyesuaian serta mengubah, mengarsipkan, atau memulihkan
-  mutasi.
+  dapat menambah Penyesuaian serta mengubah, mengarsipkan, memulihkan, atau
+  menghapus mutasi.
 - Referensi ke Perbaikan/Pemasangan bersifat opsional. Untuk Pemakaian yang
   terkait pekerjaan, dianjurkan mengisi referensi; jika referensi kosong,
   keterangan sebaiknya diisi (mis. "pemakaian umum", "cadangan teknisi").
-- Mutasi disimpan sebagai catatan perubahan stok: jika mutasi diubah,
-  diarsipkan, atau dipulihkan oleh admin, stok barang harus diperbarui secara
-  konsisten dan aksi tersebut tercatat di Riwayat.
+- Setelah perubahan mutasi, stok sebelum/sesudah setiap baris dan stok barang
+  dihitung ulang secara kronologis. Jika riwayat lama sudah tidak konsisten,
+  operasi yang memperburuk riwayat ditolak dan admin harus merapikan mutasi
+  terlebih dahulu.
 - Barang nonaktif tidak dapat dipilih untuk mutasi baru.
+
+## Aturan material tugas
+- Perbaikan dan Pemasangan dapat memiliki daftar material dari Inventaris Non
+  Perangkat. Baris duplikat untuk barang yang sama **dijumlahkan** sebelum
+  divalidasi; dua baris 6 + 6 dengan stok 10 ditolak karena totalnya 12.
+- Material divalidasi terhadap stok saat ini dan urutan kronologis tanggal
+  tugas. Material bertanggal mundur yang memakai stok belum ada pada tanggal
+  tersebut ditolak.
+- Pemakaian material dicatat otomatis sebagai mutasi Pemakaian ketika status
+  tugas berubah menjadi Selesai, sekali saja. Mutasi menyimpan referensi modul
+  dan id tugas.
+- Setelah pencatatan berhasil, tugas ditandai `material_tercatat`. Perubahan
+  tugas berikutnya tidak mencatat material lagi, sehingga stok tidak berkurang
+  dua kali.
+- Tugas yang Selesai tanpa material **tidak** diberi tanda. Material masih
+  dapat ditambahkan kemudian; saat disimpan, pencatatan dilakukan sekali.
+- Pencatatan material dilakukan dalam transaksi. Jika salah satu barang gagal
+  divalidasi, seluruh mutasi material dan tanda `material_tercatat` dibatalkan.
+- Editor material dikunci di UI setelah material tercatat. Koreksi stok
+  dilakukan melalui Mutasi Inventaris oleh admin dengan aturan stok di atas.
+
+## Aturan perangkat tugas
+- Saat tugas Perbaikan/Pemasangan berstatus Selesai, perangkat yang dipilih
+  otomatis menjadi kondisi `Terpasang` dengan lokasi pemegang nama pelanggan.
+- Perangkat yang sudah `Terpasang` di pelanggan lain ditolak. Perangkat harus
+  diubah kondisinya terlebih dahulu jika akan dipindahkan.
+- Perangkat `Nonaktif` atau diarsipkan tidak dapat dipilih. Perangkat `Rusak`
+  tidak dapat dipilih untuk Pemasangan.
+- Jika daftar perangkat pada tugas yang sudah Selesai diubah, perangkat baru
+  ikut disinkronkan. Perangkat yang dihapus dari daftar tidak otomatis
+  dikembalikan ke kondisi sebelumnya; admin harus mengubah kondisi/lokasinya
+  secara manual.
+- SN perangkat tetap unik selama sinkronisasi dan perubahan data master.
 
 ## Aturan foto
 - Format JPG, PNG, atau WebP. Maksimal 2 MB per foto.
@@ -411,7 +461,7 @@ Aturan relasi saat nonaktif:
 - Paginasi default 50 baris.
 - Backup rutin database dan foto: harian, retensi 7 harian dan 4 mingguan,
   disimpan juga di luar server.
-- Keamanan: HTTPS, kata sandi minimum 5 karakter, pendaftaran publik
+- Keamanan: HTTPS, kata sandi minimum 8 karakter, pendaftaran publik
   dimatikan.
 
 ## Notifikasi dalam aplikasi

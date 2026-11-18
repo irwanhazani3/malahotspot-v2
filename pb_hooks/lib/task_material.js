@@ -26,45 +26,67 @@ function parseMaterials(rec){
 
 function validateMaterials(app, rec){
   const items = parseMaterials(rec);
+  const grouped = {};
   for(const it of items){
     let b;
     try { b = app.findRecordById('inventaris_non_perangkat', it.barang); }
     catch(e){ throw new BadRequestError('Barang material tidak ditemukan'); }
     if(b.getBool('diarsipkan')) throw new BadRequestError('Barang material nonaktif tidak dapat dipakai: ' + (b.getString('nama_barang')||''));
-    const stok = Number(b.getFloat('stok') || 0);
-    if(stok < it.jumlah) throw new BadRequestError('Stok tidak cukup untuk ' + (b.getString('nama_barang')||'barang') + ' (tersedia: ' + stok + ', diminta: ' + it.jumlah + ')');
+    if(!grouped[it.barang]) grouped[it.barang] = { rec: b, total: 0 };
+    grouped[it.barang].total += it.jumlah;
+  }
+  // Validasi total per barang, bukan per baris. Dua baris kabel 6+6 dengan
+  // stok 10 harus ditolak karena totalnya 12.
+  const { validatePlannedUsage } = require(__hooks + '/lib/mutasi.js');
+  const tanggal = rec.getString('tanggal') || new Date().toISOString();
+  for(const id of Object.keys(grouped)){
+    const g = grouped[id];
+    const stok = Number(g.rec.getFloat('stok') || 0);
+    if(stok < g.total){
+      throw new BadRequestError('Stok tidak cukup untuk ' + (g.rec.getString('nama_barang')||'barang') + ' (tersedia: ' + stok + ', diminta: ' + g.total + ')');
+    }
+    // Tanggal tugas bisa mundur. Simulasikan pemakaian pada urutan
+    // kronologisnya agar stok tidak negatif di titik mana pun.
+    validatePlannedUsage(app, id, g.total, tanggal);
   }
 }
 
 function applyMaterials(e, fromCreate){
   const col = e.record.collection().name;
-  const oldStatus = fromCreate ? '' : e.record.original().getString('status');
   const newStatus = e.record.getString('status');
   const recorded = !!e.record.getBool('material_tercatat');
-  if(newStatus !== 'Selesai' || (!fromCreate && oldStatus === 'Selesai') || recorded) return;
+  if(newStatus !== 'Selesai' || recorded || e.record.getBool('diarsipkan')) return;
 
   const items = parseMaterials(e.record);
-  if(!items.length){
-    try{ e.record.set('material_tercatat', true); e.app.save(e.record); }catch(_){ }
-    return;
-  }
+  // Jangan tandai material_tercatat jika tidak ada material. Dengan begitu,
+  // material masih bisa ditambahkan saat tugas dibuka/diperbarui lagi.
+  if(!items.length) return;
 
-  const { recomputeStock } = require(__hooks + '/lib/mutasi.js');
+  const { recomputeStock, validateMutationSave } = require(__hooks + '/lib/mutasi.js');
   const refMod = col === 'pemasangan' ? 'Pemasangan' : 'Perbaikan';
   const tanggal = e.record.getString('tanggal') || new Date().toISOString();
-  const mutCol = e.app.findCollectionByNameOrId('mutasi_inventaris');
-  const running = {};
-  const touched = [];
-  for(const it of items){
-    try{
+
+  const run = function(tx){
+    const mutCol = tx.findCollectionByNameOrId('mutasi_inventaris');
+    const running = {};
+    const touched = [];
+
+    for(const it of items){
       let before = running[it.barang];
+      let barang = null;
       if(before === undefined){
-        const barang = e.app.findRecordById('inventaris_non_perangkat', it.barang);
+        barang = tx.findRecordById('inventaris_non_perangkat', it.barang);
+        if(barang.getBool('diarsipkan')) throw new BadRequestError('Barang material nonaktif: ' + (barang.getString('nama_barang')||''));
         before = Number(barang.getFloat('stok') || 0);
       }
       const after = before - it.jumlah;
+      if(after < 0){
+        const nama = barang ? (barang.getString('nama_barang')||'barang') : it.barang;
+        throw new BadRequestError('Stok tidak cukup untuk ' + nama + ' (tersedia: ' + before + ', diminta: ' + it.jumlah + ')');
+      }
       running[it.barang] = after;
       if(touched.indexOf(it.barang) === -1) touched.push(it.barang);
+
       const m = new Record(mutCol);
       m.set('barang', it.barang);
       m.set('jenis', 'Pemakaian');
@@ -77,13 +99,35 @@ function applyMaterials(e, fromCreate){
       const ket = it.keterangan ? ('Pemakaian otomatis ('+refMod+'): '+it.keterangan) : ('Pemakaian otomatis - '+refMod+' '+e.record.id.slice(0,8));
       m.set('keterangan', ket);
       if(e.auth) m.set('dicatat_oleh', e.auth.id);
-      e.app.save(m);
-    }catch(err){ console.log('[task material apply item]', col, String(err)); }
+
+      // Validasi terhadap riwayat nyata (termasuk mutasi bertanggal mundur)
+      // sebelum record ditulis. Jika salah satu gagal, transaksi dibatalkan.
+      const hasil = validateMutationSave(tx, m, null, 'create');
+      if(hasil && hasil.candidate){
+        m.set('stok_sebelum', hasil.candidate.before);
+        m.set('stok_sesudah', hasil.candidate.after);
+      }
+      tx.save(m);
+    }
+
+    for(const bid of touched){
+      recomputeStock(tx, bid);
+    }
+
+    const fresh = tx.findRecordById(col, e.record.id);
+    fresh.set('material_tercatat', true);
+    tx.save(fresh);
+  };
+
+  try{
+    if(typeof e.app.runInTransaction === 'function') e.app.runInTransaction(run);
+    else run(e.app);
+    // Jaga agar response request ikut menampilkan status terbaru.
+    e.record.set('material_tercatat', true);
+  }catch(err){
+    console.log('[task material apply]', col, String(err));
+    throw err;
   }
-  for(const bid of touched){
-    try { recomputeStock(e.app, bid); } catch(err){ console.log('[task material recompute]', String(err)); }
-  }
-  try{ e.record.set('material_tercatat', true); e.app.save(e.record); }catch(err){ console.log('[task material flag]', String(err)); }
 }
 
 module.exports = { parseMaterials, validateMaterials, applyMaterials };

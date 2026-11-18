@@ -66,6 +66,9 @@ onRecordCreateRequest((e) => {
       const jenis = e.record.getString('jenis');
       const jumlah = Number(e.record.getFloat('jumlah') || 0);
       if (!(jumlah > 0)) throw new BadRequestError('Jumlah mutasi harus > 0');
+      if (['Pengadaan', 'Pemakaian', 'Penyesuaian'].indexOf(jenis) === -1) {
+        throw new BadRequestError('Jenis mutasi tidak dikenal');
+      }
       const role = e.auth ? e.auth.getString('role') : '';
       if (jenis === 'Penyesuaian' && role !== 'admin') throw new ForbiddenError('Penyesuaian stok hanya oleh admin');
       if (jenis === 'Penyesuaian' && !String(e.record.getString('keterangan') || '').trim()) throw new BadRequestError('Keterangan wajib untuk penyesuaian');
@@ -76,25 +79,28 @@ onRecordCreateRequest((e) => {
         e.record.set('arah_penyesuaian', '');
       }
       const barangId = e.record.getString('barang');
+      if (!barangId) throw new BadRequestError('Barang wajib dipilih');
       const barang = e.app.findRecordById('inventaris_non_perangkat', barangId);
       if (barang.getBool('diarsipkan')) throw new BadRequestError('Barang nonaktif tidak dapat dimutasi');
-      const sebelum = Number(barang.getFloat('stok') || 0);
-      let sesudah = sebelum;
-      if (jenis === 'Pengadaan') sesudah = sebelum + jumlah;
-      else if (jenis === 'Pemakaian') sesudah = sebelum - jumlah;
-      else if (jenis === 'Penyesuaian') {
-        const arah = String(e.record.getString('arah_penyesuaian') || '').trim();
-        if (arah === 'Kurang') sesudah = sebelum - jumlah;
-        else if (arah === 'Tambah') sesudah = sebelum + jumlah;
-        else {
-          const ket = String(e.record.getString('keterangan') || '').toLowerCase();
-          if (ket.includes('kurang') || ket.includes('minus') || ket.includes('turun') || ket.trim().startsWith('-')) sesudah = sebelum - jumlah; else sesudah = sebelum + jumlah;
-        }
-      }
-      if (sesudah < 0) throw new BadRequestError('Stok tidak boleh negatif');
-      e.record.set('stok_sebelum', sebelum);
-      e.record.set('stok_sesudah', sesudah);
       if (e.auth) e.record.set('dicatat_oleh', e.auth.id);
+
+      // Simulasikan seluruh riwayat (termasuk tanggal mundur). Jika ada
+      // langkah yang membuat stok negatif, mutasi ditolak sebelum disimpan.
+      const { validateMutationSave } = require(__hooks + '/lib/mutasi.js');
+      const hasil = validateMutationSave(e.app, e.record, null, 'create');
+      if (hasil && hasil.candidate) {
+        e.record.set('stok_sebelum', hasil.candidate.before);
+        e.record.set('stok_sesudah', hasil.candidate.after);
+      }
+    }
+    if (e.collection && e.collection.name === 'inventaris_perangkat') {
+      const { validateDeviceSN } = require(__hooks + '/lib/inventory.js');
+      validateDeviceSN(e.app, e.record);
+    }
+    if (e.collection && e.collection.name === 'inventaris_non_perangkat') {
+      const { validateOpeningStock, validateStockItem } = require(__hooks + '/lib/inventory.js');
+      validateOpeningStock(e.record);
+      validateStockItem(e.record);
     }
     if (e.collection && e.collection.name === 'perbaikan') {
       if (e.auth && e.auth.getString('role') === 'teknisi' && !e.record.getString('teknisi')) {
@@ -112,11 +118,22 @@ onRecordAfterCreateSuccess((e) => {
   try {
     if (e.record.collection().name === 'mutasi_inventaris') {
       const barangId = e.record.getString('barang');
-      const barang = e.app.findRecordById('inventaris_non_perangkat', barangId);
-      barang.set('stok', e.record.getFloat('stok_sesudah'));
-      e.app.save(barang);
+      const { recomputeStock } = require(__hooks + '/lib/mutasi.js');
+      recomputeStock(e.app, barangId);
     }
-  } catch (err) { console.log('[mutasi after create]', String(err)); }
+  } catch (err) {
+    console.log('[mutasi after create]', String(err));
+    // Cadangan: setidaknya stok akhir tetap sesuai mutasi yang baru dibuat.
+    try {
+      const barangId = e.record.getString('barang');
+      const barang = e.app.findRecordById('inventaris_non_perangkat', barangId);
+      const sesudah = Number(e.record.getFloat('stok_sesudah') || 0);
+      if (Number(barang.getFloat('stok') || 0) !== sesudah) {
+        barang.set('stok', sesudah);
+        e.app.save(barang);
+      }
+    } catch (e2) { console.log('[mutasi after create fallback]', String(e2)); }
+  }
   e.next();
 });
 
@@ -128,6 +145,12 @@ onRecordUpdateRequest((e) => {
       if (oldStok !== newStok) {
         throw new BadRequestError('Stok hanya berubah melalui Mutasi Inventaris');
       }
+      const { validateStockItem } = require(__hooks + '/lib/inventory.js');
+      validateStockItem(e.record);
+    }
+    if (e.collection && e.collection.name === 'inventaris_perangkat') {
+      const { validateDeviceSN } = require(__hooks + '/lib/inventory.js');
+      validateDeviceSN(e.app, e.record);
     }
   } catch (err) {
     if (err instanceof BadRequestError || err instanceof ForbiddenError) throw err;
