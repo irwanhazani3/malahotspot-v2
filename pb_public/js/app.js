@@ -770,11 +770,25 @@
       const rows = items.map((it,i)=>materialRow(i,it,locked)).join('');
       return `<div class="card" style="margin-top:8px;padding:12px" id="materialBox"><label>Material Non-Perangkat (pemakaian)</label>${note}<div id="materialRows">${rows||(!locked?materialRow(0,{},false):'')}</div>${locked?'':`<div style="margin-top:6px"><button type="button" class="btn" id="addMaterialRow">+ Tambah Material</button></div>`}<input type="hidden" name="material_pemakaian" id="materialPemakaian" value="${esc(JSON.stringify(items||[]))}"></div>`;
     };
+    const pelangganField = (selected, withQuickAdd=false)=>{
+      const sel = select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,selected);
+      if(!withQuickAdd) return sel;
+      return `<div class="pelanggan-picker" data-quick-pelanggan="1">${sel}
+        <div style="margin-top:6px"><button type="button" class="btn btn-ghost" data-action="toggle-quick-pelanggan" style="height:32px;padding:0 10px;font-size:12px">+ Tambah Pelanggan Baru</button></div>
+        <div class="quick-pelanggan card" style="display:none;margin-top:8px;padding:12px;box-shadow:none;background:var(--bg-surface-alt)">
+          <div class="muted" style="margin-bottom:8px;font-size:.85rem">Belum ada di daftar? Tambah pelanggan baru di sini, lalu otomatis dipilih.</div>
+          <label>Nama Pelanggan</label><input type="text" data-qpel="nama" placeholder="Nama pelanggan">
+          <label>Nomor HP/WA</label><input type="text" data-qpel="nowa" placeholder="Contoh: 0812...">
+          <div class="quick-pel-msg field-error" style="display:none;margin-top:8px"></div>
+          <div class="row" style="margin-top:10px"><button type="button" class="btn btn-primary" data-action="save-quick-pelanggan">Simpan & Pilih</button><button type="button" class="btn btn-ghost" data-action="cancel-quick-pelanggan">Batal</button></div>
+        </div>
+      </div>`;
+    };
     const map={
       pelanggan:[inp('nama','Nama'),inp('nowa','Nomor HP/WA','tel'),inp('sn_perangkat','SN'),inp('koneksi','Koneksi'),inp('vlan','VLAN'),select('teknisi','Teknisi (opsional)',users,u=>u.id,u=>u.nama||u.email,rec.teknisi),inp('link_maps','Link Maps'),inp('keterangan_lokasi','Keterangan Lokasi','textarea'),fileInput('foto_rumah','Foto Rumah')],
-      layanan_gangguan:[select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('keluhan','Keluhan','textarea'),inp('status','Status','select',['Baru','Diproses','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
-      perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),multiSelect('perangkat','Perangkat terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
-      pemasangan:[select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'),inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`, multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec)],
+      layanan_gangguan:[pelangganField(rec.pelanggan,true),inp('keluhan','Keluhan','textarea'),inp('status','Status','select',['Baru','Diproses','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
+      perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),pelangganField(rec.pelanggan,true),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),multiSelect('perangkat','Perangkat terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
+      pemasangan:[pelangganField(rec.pelanggan,true),inp('tanggal','Tanggal','date'),inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`, multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec)],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
       inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
       inventaris_non_perangkat:(()=>{
@@ -888,6 +902,62 @@
     nama.addEventListener('blur', ()=>{ const m=findMatch(nama.value); if(m) fillSatuan(m,false); });
   }
 
+  function initQuickPelanggan(form){
+    if(!form) return;
+    const pickers = form.querySelectorAll('[data-quick-pelanggan="1"]');
+    pickers.forEach(picker=>{
+      if(picker.__quickPelangganInit) return;
+      picker.__quickPelangganInit = true;
+      const box = picker.querySelector('.quick-pelanggan');
+      const toggleBtn = picker.querySelector('[data-action="toggle-quick-pelanggan"]');
+      const saveBtn = picker.querySelector('[data-action="save-quick-pelanggan"]');
+      const cancelBtn = picker.querySelector('[data-action="cancel-quick-pelanggan"]');
+      const namaEl = picker.querySelector('[data-qpel="nama"]');
+      const nowaEl = picker.querySelector('[data-qpel="nowa"]');
+      const msgEl = picker.querySelector('.quick-pel-msg');
+      const selectEl = picker.querySelector('select[name="pelanggan"]');
+      const showMsg = (msg)=>{ if(!msgEl) return; msgEl.textContent=msg||''; msgEl.style.display = msg ? 'block' : 'none'; };
+      const toggle = (show)=>{
+        if(!box) return;
+        box.style.display = show ? 'block' : 'none';
+        showMsg('');
+        if(show && namaEl) try{ namaEl.focus(); }catch(e){}
+      };
+      toggleBtn && (toggleBtn.onclick=()=>toggle(box && box.style.display==='none'));
+      cancelBtn && (cancelBtn.onclick=()=>{ if(namaEl) namaEl.value=''; if(nowaEl) nowaEl.value=''; toggle(false); });
+      saveBtn && (saveBtn.onclick=async()=>{
+        const nama = String(namaEl?namaEl.value:'').trim();
+        const nowa = String(nowaEl?nowaEl.value:'').trim();
+        if(!nama){ showMsg('Nama pelanggan belum diisi.'); if(namaEl) namaEl.focus(); return; }
+        if(!nowa){ showMsg('Nomor HP/WA pelanggan belum diisi.'); if(nowaEl) nowaEl.focus(); return; }
+        const orig = saveBtn.textContent;
+        saveBtn.disabled = true; saveBtn.textContent = 'Menyimpan...';
+        try{
+          const created = await pb.collection('pelanggan').create({ nama, nowa });
+          state.cache.pelanggan = state.cache.pelanggan || [];
+          state.cache.pelanggan.push(created);
+          if(selectEl){
+            const opt = document.createElement('option');
+            opt.value = created.id;
+            opt.textContent = created.nama || created.id;
+            selectEl.appendChild(opt);
+            selectEl.value = created.id;
+            clearFieldError(selectEl);
+          }
+          if(namaEl) namaEl.value=''; if(nowaEl) nowaEl.value='';
+          toggle(false);
+          toast('Pelanggan baru ditambahkan dan dipilih');
+        }catch(e){
+          const list = serverFieldErrors(e);
+          if(list.length) showMsg(list.map(x=>x.msg).join('; '));
+          else showMsg((e && e.message) || 'Gagal menambah pelanggan.');
+        }finally{
+          saveBtn.disabled = false; saveBtn.textContent = orig;
+        }
+      });
+    });
+  }
+
   async function bindActions(){
     const doSearch=()=>{ if(!$('#searchBox')) return; state.search=$('#searchBox').value.trim();state.page=1;render(); };
     $('#btnSearch')&&($('#btnSearch').onclick=doSearch);
@@ -902,6 +972,7 @@
     $('#arcBtn')&&($('#arcBtn').onclick=async()=>{ try{ const k=state.view,id=state.detail; const rec=await pb.collection(k).getOne(id); const to=!rec.diarsipkan; if(!confirm(to?'Arsipkan/nonaktifkan data ini?':'Pulihkan data ini?')) return; await pb.collection(k).update(id,{diarsipkan:to, diarsipkan_pada: to? new Date().toISOString():null, diarsipkan_oleh: to? me().id:null}); toast(to?'Data dinonaktifkan':'Data dipulihkan'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     initMaterialEditor();
     initBarangNameHelper($('#editForm')||$('#newForm'), state.view);
+    initQuickPelanggan($('#editForm')||$('#newForm'));
     const editForm=$('#editForm');
     if(editForm) attachValidation(editForm,state.view,false);
     editForm&&(editForm.onsubmit=async(ev)=>{
@@ -1071,6 +1142,7 @@
     prefillNewForm(key,form);
     initMaterialEditor();
     initBarangNameHelper(form,key);
+    initQuickPelanggan(form);
     attachValidation(form,key,true);
     const submitBtn=form ? form.querySelector('button[type="submit"]') : null;
     form.onsubmit=async(ev)=>{ ev.preventDefault(); const f=ev.target; if(!validateAndShow(f,key,true)) return; await withSubmitState(f,submitBtn,async()=>{ try{ const fd=new FormData(f); await pb.collection(key).create(formBody(key,fd,true)); toast('Data berhasil ditambahkan'); state.cache={}; render(); }catch(e){handleSubmitError(e,f);} }); };
