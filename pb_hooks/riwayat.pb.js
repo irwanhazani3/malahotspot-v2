@@ -1,5 +1,51 @@
 /// <reference path="../pb_data/types.d.ts" />
 
+function _getRiwayatSetting(app, key, defVal){
+  try {
+    const r = app.findFirstRecordByFilter('pengaturan', 'kunci = "' + key + '"');
+    const v = r.get('nilai');
+    return (v === null || v === undefined || v === '') ? defVal : v;
+  } catch (e) { return defVal; }
+}
+
+function _clearRiwayatByFilter(app, filter){
+  let deleted = 0;
+  while (true) {
+    let batch = [];
+    try {
+      batch = app.findRecordsByFilter('riwayat', filter, '', 200, 0) || [];
+    } catch (err) {
+      console.log('[riwayat clear filter]', String(err), filter);
+      batch = [];
+    }
+    if (!batch.length) break;
+    for (const r of batch) {
+      try { app.delete(r); deleted++; } catch (err) { console.log('[riwayat clear delete]', String(err)); }
+    }
+  }
+  return deleted;
+}
+
+function _clearRiwayatOlderThanDays(app, days){
+  const n = Number(days);
+  if (!(n > 0)) return 0;
+  const cutoff = new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace('Z', '');
+  return _clearRiwayatByFilter(app, 'waktu < "' + cutoff + '"');
+}
+
+// Hapus otomatis riwayat yang lebih lama dari retensi (hari). 0/nonaktif = tidak dihapus.
+cronAdd('riwayat-retention', '20 3 * * *', () => {
+  try {
+    const days = _getRiwayatSetting($app, 'retensi_riwayat_hari', 0);
+    if (Number(days) > 0) {
+      const n = _clearRiwayatOlderThanDays($app, days);
+      if (n > 0) console.log('[riwayat retention] terhapus', n, 'data, retensi', days, 'hari');
+    }
+  } catch (e) {
+    console.log('[riwayat retention]', String(e));
+  }
+});
+
 // Hapus riwayat (audit log) berdasarkan rentang waktu. Hanya admin.
 // Body: { range: "1h"|"24h"|"7d"|"4w"|"30d"|"all" }
 routerAdd('POST', '/api/riwayat/clear', (e) => {
@@ -28,21 +74,7 @@ routerAdd('POST', '/api/riwayat/clear', (e) => {
       filter = 'waktu >= "' + cutoff + '"';
     }
 
-    const app = e.app;
-    let deleted = 0;
-    while (true) {
-      let batch = [];
-      try {
-        batch = app.findRecordsByFilter('riwayat', filter, '', 200, 0) || [];
-      } catch (err) {
-        console.log('[riwayat clear filter]', String(err), filter);
-        batch = [];
-      }
-      if (!batch.length) break;
-      for (const r of batch) {
-        try { app.delete(r); deleted++; } catch (err) { console.log('[riwayat clear delete]', String(err)); }
-      }
-    }
+    const deleted = _clearRiwayatByFilter(e.app, filter);
     return e.json(200, { ok: true, deleted: deleted, range: range });
   } catch (err) {
     console.log('[riwayat clear]', String(err));

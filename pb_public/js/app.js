@@ -522,6 +522,7 @@
           <tr><td><code>interval_qr</code></td><td>Interval berlaku token QR absen (detik)</td><td><code>30</code></td></tr>
           <tr><td><code>jam_tutup_absen</code></td><td>Batas waktu absen (WITA)</td><td><code>"23:59"</code></td></tr>
           <tr><td><code>interval_sinkron_sheets</code></td><td>Interval sinkron otomatis ke Google Sheets (menit)</td><td><code>5</code></td></tr>
+          <tr><td><code>retensi_riwayat_hari</code></td><td>Hapus otomatis riwayat yang lebih lama dari jumlah hari ini (0/nonaktif = tidak dihapus)</td><td><code>30</code></td></tr>
           <tr><td><code>sheets_last_sync</code></td><td>Waktu sinkron Sheets terakhir (otomatis oleh sistem)</td><td>—</td></tr>
         </tbody></table></div>
         <p class="muted" style="margin:10px 0 0">Pengaturan lain di sistem (akun, data, penugasan, inventaris, usulan, pengumuman, dll.) dapat dikelola melalui menu masing-masing.</p></div>`;
