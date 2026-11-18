@@ -1066,10 +1066,11 @@
             if(Object.keys(nilai).length===0){ toast('Tidak ada perubahan untuk diusulkan'); return; }
             await pb.collection('usulan_perubahan').create({modul:key, record_id:id, nilai_usulan:nilai, status:'Menunggu', pemohon:me().id});
             toast('Usulan perubahan dikirim untuk persetujuan admin');
+            state.detail=null; state.cache={}; render();
             return;
           }
           await pb.collection(key).update(id, body);
-          toast('Perubahan berhasil disimpan'); state.cache={}; render();
+          toast('Perubahan berhasil disimpan'); state.cache={}; state.detail=null; render();
         }catch(e){ handleSubmitError(e,form); }
       });
     });
