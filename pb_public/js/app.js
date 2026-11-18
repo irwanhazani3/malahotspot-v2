@@ -527,7 +527,20 @@
         <p class="muted" style="margin:10px 0 0">Pengaturan lain di sistem (akun, data, penugasan, inventaris, usulan, pengumuman, dll.) dapat dikelola melalui menu masing-masing.</p></div>`;
     }
     if(key==='riwayat' && isAdmin()){
-      extraTop += `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><h3 style="margin:0">Bersihkan Riwayat</h3><p class="muted" style="margin:4px 0 0">Hapus seluruh catatan riwayat aktivitas. Tindakan ini tidak dapat dibatalkan.</p></div><div><button class="btn" id="clearRiwayat">Hapus Semua Riwayat</button></div></div></div>`;
+      extraTop += `<div class="card"><div class="row" style="justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px"><h3 style="margin:0">Bersihkan Riwayat</h3><p class="muted" style="margin:4px 0 0">Hapus riwayat aktivitas berdasarkan rentang waktu (seperti penghapusan riwayat di browser). Tindakan ini tidak dapat dibatalkan.</p></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="min-width:220px"><label style="margin:0 0 4px">Rentang waktu</label><select id="clearRiwayatRange">
+            <option value="1h">1 jam terakhir</option>
+            <option value="24h">24 jam terakhir</option>
+            <option value="7d">7 hari terakhir</option>
+            <option value="4w">4 minggu terakhir</option>
+            <option value="30d">30 hari terakhir</option>
+            <option value="all">Sepanjang waktu (semua)</option>
+          </select></div>
+          <div><button class="btn" id="clearRiwayat">Hapus Riwayat</button></div>
+        </div>
+      </div></div>`;
     }
     if(key==='inventaris_perangkat' && aktif){
       try{
@@ -772,10 +785,14 @@
     $('#uReject')&&($('#uReject').onclick=async()=>{ const alasan=prompt('Alasan tolak:')||''; try{ await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'tolak', alasan_tolak:alasan}}); toast('Usulan ditolak'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uWithdraw')&&($('#uWithdraw').onclick=async()=>{ try{ await pb.request(`/api/usulan/${state.detail}/withdraw`,{method:'POST'}); toast('Usulan ditarik'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#clearRiwayat')&&($('#clearRiwayat').onclick=async()=>{
-      if(!confirm('Hapus SEMUA riwayat aktivitas? Tindakan ini tidak dapat dibatalkan.')) return;
+      const sel=$('#clearRiwayatRange');
+      const range=sel?sel.value:'all';
+      const labelMap={ '1h':'1 jam terakhir', '24h':'24 jam terakhir', '7d':'7 hari terakhir', '4w':'4 minggu terakhir', '30d':'30 hari terakhir', 'all':'sepanjang waktu (semua riwayat)' };
+      const label=labelMap[range]||range;
+      if(!confirm(`Hapus riwayat untuk rentang ${label}? Tindakan ini tidak dapat dibatalkan.`)) return;
       try{
-        const r=await pb.request('/api/riwayat/clear',{method:'POST'});
-        toast(`Riwayat dibersihkan (${(r&&r.deleted)||0} data dihapus)`);
+        const r=await pb.request('/api/riwayat/clear',{method:'POST',body:{range}});
+        toast(`Riwayat dibersihkan (${(r&&r.deleted)||0} data dihapus, ${label})`);
         render();
       }catch(e){ toast(errorText(e)||'Gagal menghapus riwayat',{type:'error'}); }
     });
