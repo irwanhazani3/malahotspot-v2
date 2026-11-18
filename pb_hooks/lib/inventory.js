@@ -22,6 +22,28 @@ function validateDeviceSN(app, rec) {
   }
 }
 
+function validateStockItemName(app, rec) {
+  const name = String(rec.getString('nama_barang') || '').trim().replace(/\s+/g, ' ');
+  rec.set('nama_barang', name);
+  if (!name) return;
+
+  let recs = [];
+  try {
+    recs = app.findRecordsByFilter('inventaris_non_perangkat', 'id != ""', '', 5000, 0);
+  } catch (e) {
+    console.log('[inventaris] gagal cek nama barang', String(e));
+    return;
+  }
+
+  const key = name.toLowerCase();
+  for (const r of recs) {
+    if (r.id === rec.id) continue;
+    if (String(r.getString('nama_barang') || '').trim().replace(/\s+/g, ' ').toLowerCase() === key) {
+      throw new BadRequestError('Nama barang sudah ada. Gunakan nama lain atau kelola barang yang sudah ada (tambah stok lewat Mutasi Inventaris).');
+    }
+  }
+}
+
 function validateStockItem(rec) {
   const min = Number(rec.getFloat('stok_minimum') || 0);
   if (min < 0) throw new BadRequestError('Stok minimum tidak boleh negatif');
@@ -35,4 +57,4 @@ function validateOpeningStock(rec) {
   rec.set('stok', 0);
 }
 
-module.exports = { validateDeviceSN, validateStockItem, validateOpeningStock };
+module.exports = { validateDeviceSN, validateStockItemName, validateStockItem, validateOpeningStock };

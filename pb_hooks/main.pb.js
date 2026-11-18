@@ -98,9 +98,10 @@ onRecordCreateRequest((e) => {
       validateDeviceSN(e.app, e.record);
     }
     if (e.collection && e.collection.name === 'inventaris_non_perangkat') {
-      const { validateOpeningStock, validateStockItem } = require(__hooks + '/lib/inventory.js');
+      const { validateOpeningStock, validateStockItem, validateStockItemName } = require(__hooks + '/lib/inventory.js');
       validateOpeningStock(e.record);
       validateStockItem(e.record);
+      validateStockItemName(e.app, e.record);
     }
     if (e.collection && e.collection.name === 'perbaikan') {
       if (e.auth && e.auth.getString('role') === 'teknisi' && !e.record.getString('teknisi')) {
@@ -145,8 +146,9 @@ onRecordUpdateRequest((e) => {
       if (oldStok !== newStok) {
         throw new BadRequestError('Stok hanya berubah melalui Mutasi Inventaris');
       }
-      const { validateStockItem } = require(__hooks + '/lib/inventory.js');
+      const { validateStockItem, validateStockItemName } = require(__hooks + '/lib/inventory.js');
       validateStockItem(e.record);
+      validateStockItemName(e.app, e.record);
     }
     if (e.collection && e.collection.name === 'inventaris_perangkat') {
       const { validateDeviceSN } = require(__hooks + '/lib/inventory.js');

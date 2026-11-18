@@ -156,6 +156,13 @@
     }
     if(!val) return '';
     if(name==='email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) return 'Format email tidak valid.';
+    if(key==='inventaris_non_perangkat' && name==='nama_barang' && val){
+      const norm = val.trim().replace(/\s+/g,' ').toLowerCase();
+      const match = (state.cache.barang||[]).find(b=>String(b.nama_barang||'').trim().replace(/\s+/g,' ').toLowerCase()===norm);
+      if(match && (isNew || String(match.id)!==String(state.detail||''))){
+        return 'Nama barang sudah ada. Gunakan nama lain atau kelola barang yang sudah ada (tambah stok lewat Mutasi Inventaris).';
+      }
+    }
     if(el.type==='number' || ['jumlah','stok','stok_minimum','stok_sebelum','stok_sesudah'].includes(name)){
       const n=Number(val);
       if(!isFinite(n)) return `${label} harus berupa angka.`;
