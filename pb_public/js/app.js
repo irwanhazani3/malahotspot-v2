@@ -632,6 +632,7 @@
         <div class="muted" style="font-size:.82rem;margin-top:4px">Contoh: <b>5</b> berarti sinkron otomatis sekitar setiap 5 menit.</div>
         <label>Status sinkron terakhir</label>
         <div class="card" style="padding:12px 14px;background:var(--bg-surface-alt);box-shadow:none"><b>${esc(lastSyncTxt)}</b><div class="muted" style="font-size:.82rem;margin-top:2px">Informasi ini diperbarui otomatis oleh sistem.</div></div>
+        <div class="row" style="margin-top:12px;align-items:center"><button class="btn btn-primary" type="button" id="syncSheetsNow">Sinkronkan Sekarang</button><span id="syncSheetsMsg" class="muted" style="font-size:.85rem"></span></div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Riwayat Aktivitas</h3>
@@ -1153,6 +1154,25 @@
     izinForm&&(izinForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'absen_izin',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); await pb.collection('absen_hadir').create({teknisi:me().id, tanggal:new Date().toISOString().slice(0,10), keterangan:fd.get('keterangan'), alasan:fd.get('alasan'), metode:'Mandiri', dicatat_oleh:me().id, jam_masuk:new Date().toISOString()}); toast('Izin/Sakit berhasil dicatat'); }catch(e){handleSubmitError(e,form);} }); });
     $('#genQr')&&($('#genQr').onclick=loadQr); $('#refreshToday')&&($('#refreshToday').onclick=loadTodayAbs); $('#scanQrBtn')&&($('#scanQrBtn').onclick=scanQr); if($('#todayAbs')) loadTodayAbs();
     $('#enableBrowserNotif')&&($('#enableBrowserNotif').onclick=async()=>{ const ok=await ensureNotifyPermission(); toast(ok?'Notifikasi browser aktif':'Izin notifikasi ditolak/tidak tersedia'); });
+    $('#syncSheetsNow')&&($('#syncSheetsNow').onclick=async()=>{
+      const btn=$('#syncSheetsNow'); const msg=$('#syncSheetsMsg');
+      if(msg){ msg.textContent='Menyinkronkan...'; msg.className='muted'; }
+      const orig=btn?btn.textContent:'Sinkronkan Sekarang';
+      if(btn){ btn.disabled=true; btn.textContent='Menyinkronkan...'; }
+      try{
+        const r=await pb.request('/api/sheets/sync',{method:'POST'});
+        const info = (r && r.message) ? r.message : (r && r.skipped ? 'Tidak ada data baru untuk dikirim.' : `Sinkron berhasil (${(r&&r.modules)||0} modul).`);
+        toast(info);
+        if(msg){ msg.textContent=info; msg.className='ok'; }
+        setTimeout(()=>{ try{ render(); }catch(e){} }, 400);
+      }catch(e){
+        const errMsg = (e && e.data && (e.data.message||e.data.detail)) || errorText(e) || 'Gagal sinkron ke Google Sheets.';
+        toast(errMsg,{type:'error'});
+        if(msg){ msg.textContent=errMsg; msg.className='error'; }
+      }finally{
+        if(btn){ btn.disabled=false; btn.textContent=orig; }
+      }
+    });
     $('#uApprove')&&($('#uApprove').onclick=async()=>{ try{ await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'setujui'}}); toast('Usulan disetujui'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uApproveEdit')&&($('#uApproveEdit').onclick=async()=>{ const field=$('#uNilai'); try{ let nilai={}; try{ nilai=JSON.parse(field.value||'{}'); }catch(_){ showFieldError(field,'Nilai usulan harus berupa JSON yang valid.'); focusField(field); toast('Nilai usulan bukan JSON yang valid',{type:'error'}); return; } clearFieldError(field); await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'ubah_setujui', nilai_usulan:nilai}}); toast('Usulan diubah & disetujui'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uReject')&&($('#uReject').onclick=async()=>{ const alasan=prompt('Alasan tolak:')||''; try{ await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'tolak', alasan_tolak:alasan}}); toast('Usulan ditolak'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
