@@ -1,6 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-// Sinkron snapshot DB → Google Sheets.
+// Sinkron arsip DB → Google Sheets (upsert; baris lama tidak dihapus).
 // Logika pengumpulan data dan pengiriman ada di lib/sheets.js dan
 // di-require DI DALAM callback (batasan PocketBase JSVM).
 // Waktu sinkron terakhir disimpan di koleksi `pengaturan`
@@ -37,7 +37,13 @@ cronAdd('sheets-sync', '* * * * *', () => {
     }
 
     const { send, saveLastSync, bodySnippet, responseJson } = require(__hooks + '/lib/sheets.js');
-    const { res, modules } = send(app, url, token);
+    const result = send(app, url, token);
+    if (result.skipped) {
+      saveLastSync(app, now);
+      return;
+    }
+
+    const { res, modules } = result;
     const webhook = responseJson(res);
 
     if (res.statusCode >= 300) {
@@ -48,8 +54,11 @@ cronAdd('sheets-sync', '* * * * *', () => {
       console.log('[sheets] webhook menolak / respons tidak dikenali:', JSON.stringify(webhook).slice(0, 300), bodySnippet(res, 200));
       return;
     }
+    if (Number(webhook.version || 0) < 2) {
+      console.log('[sheets] peringatan: Apps Script masih versi lama; deploy versi baru agar baris lama tidak terhapus');
+    }
 
-    console.log('[sheets] sinkron sukses, modul:', modules.length);
+    console.log('[sheets] sinkron sukses, modul:', modules.length, 'kosong:', result.skippedEmpty);
     saveLastSync(app, now);
   } catch (e) {
     console.log('[sheets cron]', String(e));
@@ -71,7 +80,19 @@ routerAdd('POST', '/api/sheets/sync', (e) => {
     }
 
     const { send, saveLastSync, bodySnippet, responseJson } = require(__hooks + '/lib/sheets.js');
-    const { res, modules } = send(app, url, token);
+    const result = send(app, url, token);
+    if (result.skipped) {
+      saveLastSync(app, Date.now());
+      return e.json(200, {
+        ok: true,
+        skipped: true,
+        modules: 0,
+        emptyModules: result.skippedEmpty,
+        message: 'Tidak ada data untuk dikirim. Sheets tidak diubah agar data lama tetap aman.'
+      });
+    }
+
+    const { res, modules } = result;
     const webhook = responseJson(res);
 
     if (res.statusCode >= 300) {
@@ -94,7 +115,19 @@ routerAdd('POST', '/api/sheets/sync', (e) => {
     }
 
     saveLastSync(app, Date.now());
-    return e.json(200, { ok: true, status: res.statusCode, modules: modules.length });
+    const out = {
+      ok: true,
+      status: res.statusCode,
+      modules: modules.length,
+      emptyModules: result.skippedEmpty,
+      updated: webhook.updated || 0,
+      appended: webhook.appended || 0,
+      retained: webhook.retained === true
+    };
+    if (Number(webhook.version || 0) < 2) {
+      out.warning = 'Apps Script masih versi lama. Deploy versi baru agar baris yang dihapus di web tetap tersimpan di spreadsheet.';
+    }
+    return e.json(200, out);
   } catch (err) {
     console.log('[sheets manual]', String(err));
     return e.json(500, { message: 'Gagal sinkron', error: String(err) });

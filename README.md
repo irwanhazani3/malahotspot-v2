@@ -22,7 +22,8 @@ Sudah berjalan dan diuji:
 - Perangkat tugas otomatis menjadi `Terpasang` beserta lokasi pelanggan.
 - Absen lewat QR, tugas, dan mandiri; waktu ditampilkan dalam WITA.
 - Validasi foto (JPG/PNG/WebP, maks. 2 MB) di server.
-- Sinkron snapshot database ke Google Sheets secara terjadwal/manual.
+- Sinkron arsip database ke Google Sheets secara terjadwal/manual; baris lama
+  di spreadsheet tidak dihapus saat data web hilang.
 
 ## Struktur
 
@@ -87,6 +88,11 @@ Sudah berjalan dan diuji:
 Sinkron bersifat **satu arah: PocketBase → Google Sheets**. Sheets hanya untuk
 dilihat/disalin ke Excel; perubahan di Sheets tidak dikirim balik.
 
+Spreadsheet berfungsi sebagai **salinan arsip**. Baris yang sudah pernah masuk
+tidak dihapus ketika data di web dihapus, diarsipkan, atau database web
+bermasalah. Sinkron mencocokkan baris berdasarkan kolom `id`: data berubah
+diperbarui, data baru ditambahkan, dan data lama tetap disimpan.
+
 ### 1. Siapkan Apps Script
 
 1. Buka spreadsheet tujuan, lalu **Ekstensi → Apps Script**.
@@ -100,9 +106,14 @@ dilihat/disalin ke Excel; perubahan di Sheets tidak dikirim balik.
 
 4. **Deploy → Manage deployments → Edit (pensil) → Version: New version →
    Deploy**. Jangan memakai “New deployment” bila URL `/exec` sudah dipakai,
-   karena URL-nya akan berubah.
+   karena URL-nya akan berubah. Versi baru ini wajib dipakai agar baris lama
+   tidak terhapus saat data web kosong.
 5. Pastikan deployment memakai **Execute as: Me** dan **Who has access:
    Anyone**.
+
+Setelah deploy, tab lama akan otomatis mendapat kolom `id` di paling kanan.
+Jangan menghapus atau mengubah kolom `id`; kolom itu dipakai untuk mencocokkan
+baris. Kolom tambahan buatan Anda tetap dipertahankan.
 
 ### 2. Arahkan server ke deployment
 
@@ -116,26 +127,39 @@ SHEETS_WEBHOOK_TOKEN=token-yang-sama-dengan-Script-Property-TOKEN
 Muat ulang environment dan restart PocketBase. Server mengirim body:
 
 ```json
-{"token":"...","modules":[{"koleksi":"...","nama":"...","headers":[],"rows":[]}]}
+{"token":"...","retention":true,"modules":[{"koleksi":"...","nama":"...","headers":[],"rows":[]}]}
 ```
 
-Token juga dikirim di header `Authorization: Bearer ...`.
+Token juga dikirim di header `Authorization: Bearer ...`. Kolom terakhir setiap
+`headers` adalah `id`.
 
 ### 3. Tes dan jadwal
 
 - Manual (admin): `POST /api/sheets/sync`.
-- Balasan sukses: `{"ok":true,"status":200,"modules":8}`.
+- Balasan sukses saat ada data:
+  `{"ok":true,"status":200,"modules":8,"updated":...,"appended":...,"retained":true}`.
+- Balasan saat semua modul kosong:
+  `{"ok":true,"skipped":true,"message":"Tidak ada data untuk dikirim..."}`.
+  Spreadsheet tidak diubah.
 - Tab yang ditulis: `pelanggan`, `layanan_gangguan`, `absen_hadir`,
   `perbaikan`, `inventaris_perangkat`, `inventaris_non_perangkat`,
-  `pemasangan`, `mutasi_inventaris`.
-- Setiap sinkron menimpa isi tab. Snapshot kosong tetap menulis header dan
-  menghapus baris lama.
+  `pemasangan`, `mutasi_inventaris`. Tab baru dibuat saat modulnya memiliki
+  data.
+- Sinkron tidak menimpa seluruh tab. Baris dicocokkan berdasarkan `id`, data
+  yang berubah diperbarui, data baru ditambahkan, dan baris lama tidak dihapus.
+- Modul yang kosong tidak dikirim. Jika seluruh data web hilang, spreadsheet
+  tetap berisi data terakhir.
 - Interval diatur di koleksi `pengaturan` dengan kunci
   `interval_sinkron_sheets` (1–1440 menit, default 5). Perubahan langsung
   berlaku tanpa restart.
 - Waktu sinkron terakhir disimpan di `pengaturan` dengan kunci
   `sheets_last_sync`.
 - Relasi dikirim sebagai nama, tanggal dalam format WITA.
+
+Jika balasan manual berisi `warning` bahwa Apps Script masih versi lama,
+segera lakukan **Deploy → Manage deployments → Edit → New version** pada
+Apps Script. Tanpa redeploy, baris yang dihapus di web masih bisa hilang dari
+spreadsheet.
 
 Jika balasan bukan JSON atau berisi `Token tidak cocok`, periksa kembali
 Script Properties, versi deployment, akses “Anyone”, dan URL yang berakhiran

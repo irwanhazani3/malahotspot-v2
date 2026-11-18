@@ -1,4 +1,6 @@
 // Helper sinkron Google Sheets — di-require DI DALAM callback hook.
+// Data dikirim sebagai upsert (dengan kolom id); modul kosong tidak dikirim
+// agar baris lama di spreadsheet tidak terhapus.
 // PocketBase JSVM tidak membagikan variabel top-level antar handler.
 
 function witaString(v) {
@@ -26,11 +28,17 @@ function collectModule(app, name, headers, mapFn) {
   const rows = [];
   try {
     const recs = app.findRecordsByFilter(name, 'diarsipkan = false', '', 5000, 0);
-    for (const r of recs) rows.push(mapFn(r));
+    for (const r of recs) {
+      const row = mapFn(r);
+      // ID dipakai Apps Script untuk mencocokkan baris (upsert), sehingga
+      // data yang sudah ada di spreadsheet tidak perlu dihapus.
+      row.push(r.id);
+      rows.push(row);
+    }
   } catch (e) {
     console.log('[sheets] skip', name, String(e));
   }
-  return { koleksi: name, nama: name, headers, rows };
+  return { koleksi: name, nama: name, headers: headers.concat(['id']), rows };
 }
 
 function collectModules(app) {
@@ -147,12 +155,21 @@ function postWebhook(url, token, body) {
 }
 
 function send(app, url, token) {
-  const modules = collectModules(app);
+  const allModules = collectModules(app);
+  // Jangan kirim modul kosong. Selain mengurangi beban, ini mencegah
+  // Apps Script versi lama menghapus tab yang sudah tidak punya data di web.
+  const modules = allModules.filter(m => (m.rows || []).length > 0);
+  const skippedEmpty = allModules.length - modules.length;
   let totalRows = 0;
   for (const m of modules) totalRows += (m.rows || []).length;
-  console.log('[sheets] kirim', modules.length, 'modul,', totalRows, 'baris');
+  console.log('[sheets] kirim', modules.length, 'modul,', totalRows, 'baris,', skippedEmpty, 'modul kosong dilewati');
 
-  const body = JSON.stringify({ token, modules });
+  if (!modules.length) {
+    console.log('[sheets] tidak ada data; Sheets tidak diubah');
+    return { skipped: true, modules, allModules, skippedEmpty, res: null };
+  }
+
+  const body = JSON.stringify({ token, modules, retention: true });
   let res;
   try {
     res = postWebhook(url, token, body);
@@ -162,7 +179,7 @@ function send(app, url, token) {
     console.log('[sheets] percobaan pertama gagal, ulangi:', String(e));
     res = postWebhook(url, token, body);
   }
-  return { res, modules };
+  return { skipped: false, res, modules, allModules, skippedEmpty };
 }
 
 module.exports = {

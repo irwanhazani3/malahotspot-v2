@@ -345,11 +345,24 @@ Aturan relasi saat nonaktif:
 - Data alamat dan koordinat pelanggan lama dihapus melalui migrasi.
 
 ## Sinkron ke Google Sheets
-- Satu arah: database ke Sheets. Sheets hanya untuk dilihat dan disalin ke Excel.
-- Tahap awal: PocketBase mengirim snapshot penuh terjadwal ke webhook Apps
-  Script, default tiap 5 menit. Apps Script menimpa isi tiap tab.
-- Admin dapat mengubah interval sinkron antara 1 dan 1440 menit. Perubahan
-  berlaku tanpa perlu memulai ulang server.
+- Satu arah: database ke Sheets. Sheets adalah salinan arsip untuk dilihat dan
+  disalin ke Excel; perubahan di Sheets tidak dikirim balik.
+- PocketBase mengirim data aktif secara terjadwal ke webhook Apps Script,
+  default tiap 5 menit. Admin dapat mengubah interval antara 1 dan 1440 menit;
+  perubahan berlaku tanpa perlu memulai ulang server.
+- **Data di Sheets bersifat retentif.** Baris yang sudah pernah tersinkron tidak
+  dihapus ketika data di PocketBase dihapus, diarsipkan, atau database web
+  bermasalah. Spreadsheet dapat dipakai sebagai salinan darurat.
+- Setiap tab memiliki kolom `id` di paling kanan. Apps Script mencocokkan baris
+  berdasarkan `id`: baris yang berubah diperbarui, baris baru ditambahkan, dan
+  baris lama tidak pernah dihapus. Kolom tambahan buatan pengguna juga
+  dipertahankan.
+- Tab lama yang belum memiliki kolom `id` akan ditambahi kolom `id`; baris lama
+  dicocokkan berdasarkan isi kolom non-id agar tidak menghasilkan duplikat.
+  Deploy ulang Apps Script versi 2 diperlukan agar perilaku ini aktif.
+- Modul yang tidak memiliki data tidak dikirim ke webhook. Snapshot kosong
+  tidak mengubah isi spreadsheet, sehingga tab lama tetap utuh. Tab baru dibuat
+  saat modul tersebut memiliki data.
 - URL dan token webhook hanya dari environment: SHEETS_WEBHOOK_URL dan
   SHEETS_WEBHOOK_TOKEN. Token dikirim di body JSON dan juga sebagai header
   `Authorization: Bearer ...`.
@@ -362,10 +375,9 @@ Aturan relasi saat nonaktif:
   tidak ikut disalin.
 - Relasi dikirim sebagai nama yang ditampilkan, bukan id.
 - Payload webhook:
-  `{"token":"...","modules":[{"koleksi","nama","headers","rows"}]}`. `rows`
-  berisi array nilai sesuai urutan `headers`. Apps Script menimpa tab bernama
-  `nama` dengan `headers` dan `rows`; snapshot kosong tetap menulis header dan
-  menghapus baris lama.
+  `{"token":"...","retention":true,"modules":[{"koleksi","nama","headers","rows"}]}`.
+  `rows` berisi array nilai sesuai urutan `headers`; kolom terakhir `headers`
+  adalah `id`. Apps Script melakukan upsert ke tab bernama `nama`.
 - Tanggal dikirim sebagai `YYYY-MM-DD` dan tanggal-jam sebagai
   `YYYY-MM-DD HH:mm` dalam WITA.
 - Webhook per record ditunda ke tahap berikutnya.
@@ -373,8 +385,11 @@ Aturan relasi saat nonaktif:
   umum.
 - Waktu sinkron terakhir dicatat di koleksi `pengaturan` dengan kunci
   `sheets_last_sync`, sehingga interval tetap berlaku setelah server restart.
+- Jika tidak ada data sama sekali, sinkron manual mengembalikan
+  `{"ok":true,"skipped":true}` dan tidak menghubungi webhook.
 - Kegagalan sinkron dicatat di log tanpa data pribadi pelanggan. Bila URL atau
-  token belum diatur, sinkron dilewati.
+  token belum diatur, sinkron dilewati. Jika Apps Script masih versi lama,
+  server mencatat peringatan agar segera di-deploy ulang.
 
 ## Fitur umum
 - Pencarian dan filter di setiap modul:
