@@ -745,6 +745,7 @@
     const namaSuggestions = uniq(perangkat,'nama');
     const tipeSuggestions = uniq(perangkat,'tipe');
     const barangNamaSuggestions = uniq(barang,'nama_barang');
+    const barangPilihOptions = (state.cache.barang||[]).filter(b=>!b.diarsipkan).slice().sort((a,b)=>String(a.nama_barang||'').localeCompare(String(b.nama_barang||''),'id'));
     const materialRow = (idx,it={},locked=false)=>{
       const opts = (state.cache.barang||[]).filter(b=>!b.diarsipkan).map(b=>`<option value="${esc(b.id)}" ${String(it.barang||'')===String(b.id)?'selected':''}>${esc((b.nama_barang||'-')+' ('+(b.satuan||'-')+') stok:'+ (b.stok??0))}</option>`).join('');
       return `<div class="row material-row" data-idx="${idx}" style="gap:6px;align-items:flex-end;margin:6px 0;${locked?'opacity:.8':''}">
@@ -769,7 +770,20 @@
       pemasangan:[select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'),inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`, multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec)],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
       inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
-      inventaris_non_perangkat:[inp('nama_barang','Nama Barang','text',null,false,barangNamaSuggestions),inp('satuan','Satuan'),inp('stok','Stok (otomatis, lewat mutasi)','number',null,true),inp('stok_minimum','Stok Minimum','number'),inp('keterangan','Keterangan','textarea')],
+      inventaris_non_perangkat:(()=>{
+        const curNama = String(rec.nama_barang||'').trim();
+        const matched = barangPilihOptions.find(b=>String(b.nama_barang||'').trim().toLowerCase()===curNama.toLowerCase());
+        const pickVal = matched ? String(matched.nama_barang||'') : (curNama ? '__new__' : '');
+        const showInput = pickVal==='__new__' || pickVal==='';
+        const opts = [`<option value="">-- Pilih barang yang sudah ada --</option>`]
+          .concat(barangPilihOptions.map(b=>`<option value="${esc(String(b.nama_barang||''))}" ${pickVal===String(b.nama_barang||'')?'selected':''}>${esc(String(b.nama_barang||'-') + (b.satuan?(' ('+b.satuan+')'):'') )}</option>`))
+          .concat([`<option value="__new__" ${pickVal==='__new__'?'selected':''}>+ Barang baru (ketik nama)...</option>`])
+          .join('');
+        const dropdown = `<label for="namaBarangSelect">Pilih Barang</label><select id="namaBarangSelect" name="nama_barang_pilih">${opts}</select><div class="muted" style="font-size:.82rem;margin:4px 0 0">Pilih dari daftar untuk mengisi cepat, atau pilih "Barang baru" untuk mengetik nama baru.</div>`;
+        const nameInput = `<div id="namaBarangInputWrap" style="${showInput?'':'display:none'}"><label>Nama Barang</label><input name="nama_barang" type="text" value="${esc(curNama)}" placeholder="Ketik nama barang"></div>`;
+        const nameHiddenHint = (!showInput) ? `<input type="hidden" id="namaBarangReadonlyHelper" value="1">` : '';
+        return [dropdown, nameInput + nameHiddenHint, inp('satuan','Satuan'), inp('stok','Stok (otomatis, lewat mutasi)','number',null,true), inp('stok_minimum','Stok Minimum','number'), inp('keterangan','Keterangan','textarea')];
+      })(),
       mutasi_inventaris:[select('barang','Barang',barang,b=>b.id,b=>`${b.nama_barang} (${b.satuan})`,rec.barang),inp('jenis','Jenis','select',jenisMutasi),inp('jumlah','Jumlah / selisih (Penyesuaian = selisih, bukan stok akhir)','number'),inp('tanggal','Tanggal','date'),inp('arah_penyesuaian','Arah Penyesuaian (Tambah/Kurang selisih)','select',['','Tambah','Kurang']),inp('referensi_modul','Ref Modul','select',['-','Perbaikan','Pemasangan']),inp('referensi_id','Ref ID'),inp('keterangan','Keterangan','textarea')],
       usulan_perubahan:[inp('modul','Modul (koleksi)'),inp('record_id','Record ID'),inp('nilai_usulan','Nilai Usulan (JSON)','textarea'),inp('status','Status','select',['Menunggu','Disetujui','Ditolak','Ditarik']),inp('alasan_tolak','Alasan Tolak','textarea')],
       users:[inp('nama','Nama'),inp('email','Email','email'),inp('telepon','Telepon'),inp('role','Role','select',['admin','teknisi']),`<label>Aktif</label><select name="aktif"><option value="true" ${String(rec.aktif)!=='false'?'selected':''}>true</option><option value="false" ${String(rec.aktif)==='false'?'selected':''}>false</option></select>`, (rec && rec.id ? `<label>Password baru (kosongkan jika tidak diubah, min 8)</label><input name="password" type="password" minlength="8" autocomplete="new-password"><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="8" autocomplete="new-password">` : `<label>Password (min 8)</label><input name="password" type="password" minlength="8" autocomplete="new-password" required><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="8" autocomplete="new-password" required>`)],
@@ -819,20 +833,52 @@
     if(!form || key!=='inventaris_non_perangkat') return;
     const nama = fieldEl(form,'nama_barang');
     const satuan = fieldEl(form,'satuan');
+    const pilih = form.querySelector('#namaBarangSelect');
+    const wrap = form.querySelector('#namaBarangInputWrap');
     if(!nama || nama.__barangHelper) return;
     nama.__barangHelper = true;
-    const apply = ()=>{
-      const val = String(nama.value||'').trim();
-      if(!val) return;
-      const items = state.cache.barang || [];
-      const match = items.find(b=>String(b.nama_barang||'').trim().toLowerCase()===val.toLowerCase());
-      if(match && satuan && !String(satuan.value||'').trim() && match.satuan){
-        satuan.value = match.satuan;
-      }
+
+    const findMatch = (val)=>{
+      const v = String(val||'').trim().toLowerCase();
+      if(!v) return null;
+      return (state.cache.barang||[]).find(b=>String(b.nama_barang||'').trim().toLowerCase()===v);
     };
-    nama.addEventListener('change', apply);
-    nama.addEventListener('input', ()=>{ /* allow datalist selection to trigger */ });
-    nama.addEventListener('blur', apply);
+    const fillSatuan = (match, force=false)=>{
+      if(!match || !satuan) return;
+      if(force || !String(satuan.value||'').trim()) satuan.value = match.satuan || '';
+    };
+    const syncFromSelect = ()=>{
+      if(!pilih) return;
+      const v = String(pilih.value||'');
+      if(v === '__new__'){
+        if(wrap) wrap.style.display='';
+        nama.readOnly = false;
+        if(!String(nama.value||'').trim() || findMatch(nama.value)) nama.value = '';
+        try{ nama.focus(); }catch(e){}
+        return;
+      }
+      if(v){
+        nama.value = v;
+        if(wrap) wrap.style.display='none';
+        nama.readOnly = true;
+        clearFieldError(nama);
+        fillSatuan(findMatch(v), false);
+        return;
+      }
+      // empty selection
+      if(wrap) wrap.style.display='';
+      nama.readOnly = false;
+      if(!String(nama.value||'').trim()) { /* keep */ }
+    };
+
+    if(pilih){
+      pilih.addEventListener('change', syncFromSelect);
+      // initialize state based on current selection/value
+      syncFromSelect();
+    }
+
+    nama.addEventListener('change', ()=>{ const m=findMatch(nama.value); if(m) fillSatuan(m,false); });
+    nama.addEventListener('blur', ()=>{ const m=findMatch(nama.value); if(m) fillSatuan(m,false); });
   }
 
   async function bindActions(){
@@ -1036,6 +1082,7 @@
     if(!hasFile){
       const seenMulti = new Set();
       for(const [k,v] of fd.entries()){
+        if(k==='nama_barang_pilih') continue;
         if(multiKeys.includes(k)){
           seenMulti.add(k);
           body[k] = fd.getAll(k).filter(x=>x!=='');
@@ -1050,6 +1097,7 @@
       multiKeys.forEach(k=>{ if(seenMulti.has(k) || fd.has(k) || ['pemasangan','perbaikan'].includes(key)) { if(!(k in body)) body[k]=[]; } });
     } else {
       // normalize numbers/json and multi in FormData
+      if(fd.has('nama_barang_pilih')) body.delete('nama_barang_pilih');
       multiKeys.forEach(k=>{
         if(fd.has(k) || ['pemasangan','perbaikan'].includes(key)){
           const vals = fd.getAll(k).filter(x=>x!=='');
@@ -1058,6 +1106,7 @@
         }
       });
       for(const [k,v] of Array.from(fd.entries())){
+        if(k==='nama_barang_pilih') { body.delete(k); continue; }
         if(multiKeys.includes(k)) continue;
         if(v instanceof File) continue;
         if(v===''){ body.delete(k); continue; }
