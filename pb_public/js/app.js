@@ -380,6 +380,7 @@
       else if(state.view==='qr_absen') html=await qrAbsenView();
       else if(state.view==='pengumuman') html=await pengumumanView();
       else if(state.view==='pesan') html=await pesanView();
+      else if(state.view==='notifikasi') html=await notifikasiView();
       else html=await moduleView(state.view);
     }catch(e){ html=`<div class="card error">${esc(e.message||e)}</div>`; }
     app.innerHTML=layout(html); bindNav(); bindActions();
@@ -448,11 +449,74 @@
       const sb=$('#sidebar'); if(sb) sb.classList.remove('open');
       render(); 
     });
-    const nb=$('#btnNotif'); if(nb) nb.onclick=async()=>{ clearNotif('all'); const ok=await ensureNotifyPermission(); toast(ok?'Notifikasi browser aktif':'Izin notifikasi ditolak/tidak tersedia'); };
+    const nb=$('#btnNotif'); if(nb) nb.onclick=()=>{ clearNotif('all'); state.view='notifikasi'; state.page=1; state.detail=null; const sb=$('#sidebar'); if(sb) sb.classList.remove('open'); render(); };
     const mt=$('#menuToggle'), sb=$('#sidebar');
     if(mt && sb){ mt.onclick=()=>sb.classList.toggle('open'); }
     const tt=$('#themeToggle');
     if(tt) tt.onclick=toggleTheme;
+  }
+
+  async function notifikasiView(){
+    clearNotif('all');
+    const uid = me() && me().id;
+    const groups = [];
+
+    try{
+      const r = await pb.collection('pesan_langsung').getList(1,10,{filter:`penerima = "${uid}"`, sort:'-dibuat_pada', expand:'pengirim'});
+      const rows = (r.items||[]).map(m=>{
+        const dari = expandName(m,'pengirim') || nameOf(state.cache.users,m.pengirim,m.pengirim) || 'Pengguna';
+        const unread = !m.dibaca_pada;
+        return `<div class="card" style="margin-top:8px"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${esc(dari)}</b> ${unread?'<span class="badge low">baru</span>':''}<div style="margin-top:4px">${esc(String(m.isi||'').slice(0,140))}</div><div class="muted" style="margin-top:6px">${esc(witaDisplay(m.dibuat_pada))}</div></div><div><button class="btn btn-ghost" data-open="pesan:">Buka Pesan</button></div></div></div>`;
+      }).join('');
+      groups.push(`<div class="card"><h3 style="margin-top:0">Pesan Masuk</h3>${rows || '<div class="muted">Belum ada pesan masuk.</div>'}</div>`);
+    }catch(e){
+      groups.push(`<div class="card"><h3 style="margin-top:0">Pesan Masuk</h3><div class="error">${esc(e.message||'Gagal memuat pesan')}</div></div>`);
+    }
+
+    try{
+      const r = await pb.collection('pengumuman').getList(1,8,{filter:'diarsipkan = false', sort:'-dibuat_pada'});
+      const rows = (r.items||[]).map(a=>`<div class="card" style="margin-top:8px"><b>${esc(a.judul||'Pengumuman')}</b><div style="margin-top:4px">${esc(String(a.isi||'').slice(0,160))}</div><div class="muted" style="margin-top:6px">${esc(witaDisplay(a.dibuat_pada))}</div><div style="margin-top:8px"><button class="btn btn-ghost" data-open="pengumuman:">Lihat Pengumuman</button></div></div>`).join('');
+      groups.push(`<div class="card"><h3 style="margin-top:0">Pengumuman</h3>${rows || '<div class="muted">Belum ada pengumuman.</div>'}</div>`);
+    }catch(e){
+      groups.push(`<div class="card"><h3 style="margin-top:0">Pengumuman</h3><div class="error">${esc(e.message||'Gagal memuat pengumuman')}</div></div>`);
+    }
+
+    try{
+      const filter = isAdmin() ? 'status = "Menunggu"' : `pemohon = "${uid}"`;
+      const title = isAdmin() ? 'Usulan Menunggu Persetujuan' : 'Usulan Saya';
+      const r = await pb.collection('usulan_perubahan').getList(1,10,{filter, sort:'-dibuat_pada', expand:'pemohon'});
+      const rows = (r.items||[]).map(u=>{
+        const pemohon = expandName(u,'pemohon') || nameOf(state.cache.users,u.pemohon,u.pemohon) || '-';
+        return `<div class="card" style="margin-top:8px"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${esc(u.modul||'Usulan')}</b> <span class="badge">${esc(u.status||'-')}</span><div class="muted" style="margin-top:4px">Record: ${esc(u.record_id||'-')} · Pemohon: ${esc(pemohon)}</div><div class="muted" style="margin-top:4px">${esc(witaDisplay(u.dibuat_pada))}</div></div><div><button class="btn btn-ghost" data-open="usulan_perubahan:${esc(u.id)}">Buka</button></div></div></div>`;
+      }).join('');
+      groups.push(`<div class="card"><h3 style="margin-top:0">${esc(title)}</h3>${rows || '<div class="muted">Tidak ada usulan.</div>'}</div>`);
+    }catch(e){
+      groups.push(`<div class="card"><h3 style="margin-top:0">Usulan</h3><div class="error">${esc(e.message||'Gagal memuat usulan')}</div></div>`);
+    }
+
+    try{
+      const [g,p,rp] = await Promise.all([
+        pb.collection('layanan_gangguan').getList(1,5,{filter:`ditugaskan_ke = "${uid}" && diarsipkan = false`, sort:'-diubah_pada', expand:'pelanggan'}),
+        pb.collection('pemasangan').getList(1,5,{filter:`ditugaskan_ke = "${uid}" && diarsipkan = false`, sort:'-diubah_pada', expand:'pelanggan'}),
+        pb.collection('perbaikan').getList(1,5,{filter:`teknisi = "${uid}" && diarsipkan = false`, sort:'-diubah_pada', expand:'pelanggan'})
+      ]);
+      const rows = []
+        .concat((g.items||[]).map(it=>({col:'layanan_gangguan', label:'Gangguan', it})))
+        .concat((p.items||[]).map(it=>({col:'pemasangan', label:'Pemasangan', it})))
+        .concat((rp.items||[]).map(it=>({col:'perbaikan', label:'Perbaikan', it})))
+        .sort((a,b)=>new Date(b.it.diubah_pada||b.it.dibuat_pada||0)-new Date(a.it.diubah_pada||a.it.dibuat_pada||0))
+        .slice(0,10)
+        .map(({col,label,it})=>{
+          const pelanggan = expandName(it,'pelanggan') || nameOf(state.cache.pelanggan,it.pelanggan,it.pelanggan||'-');
+          const info = it.keluhan || it.tindakan || '-';
+          return `<div class="card" style="margin-top:8px"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${esc(label)}</b> · <span class="badge">${esc(it.status||'-')}</span><div style="margin-top:4px">Pelanggan: ${esc(pelanggan||'-')}</div><div class="muted" style="margin-top:4px">${esc(String(info).slice(0,100))}</div><div class="muted" style="margin-top:4px">Diperbarui: ${esc(witaDisplay(it.diubah_pada||it.dibuat_pada))}</div></div><div><button class="btn btn-ghost" data-open="${col}:${esc(it.id)}">Buka</button></div></div></div>`;
+        }).join('');
+      groups.push(`<div class="card"><h3 style="margin-top:0">Tugas Saya Terbaru</h3>${rows || '<div class="muted">Belum ada tugas yang ditugaskan.</div>'}</div>`);
+    }catch(e){
+      groups.push(`<div class="card"><h3 style="margin-top:0">Tugas Saya Terbaru</h3><div class="error">${esc(e.message||'Gagal memuat tugas')}</div></div>`);
+    }
+
+    return `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">Notifikasi</h2><p class="muted" style="margin:4px 0 0">Ringkasan pesan, pengumuman, usulan, dan tugas terbaru.</p></div><div><button class="btn btn-ghost" id="enableBrowserNotif">Aktifkan Notifikasi Browser</button></div></div></div>${groups.join('')}`;
   }
 
   async function dashboardView(){
@@ -1088,6 +1152,7 @@
     if(izinForm) attachValidation(izinForm,'absen_izin',true);
     izinForm&&(izinForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'absen_izin',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); await pb.collection('absen_hadir').create({teknisi:me().id, tanggal:new Date().toISOString().slice(0,10), keterangan:fd.get('keterangan'), alasan:fd.get('alasan'), metode:'Mandiri', dicatat_oleh:me().id, jam_masuk:new Date().toISOString()}); toast('Izin/Sakit berhasil dicatat'); }catch(e){handleSubmitError(e,form);} }); });
     $('#genQr')&&($('#genQr').onclick=loadQr); $('#refreshToday')&&($('#refreshToday').onclick=loadTodayAbs); $('#scanQrBtn')&&($('#scanQrBtn').onclick=scanQr); if($('#todayAbs')) loadTodayAbs();
+    $('#enableBrowserNotif')&&($('#enableBrowserNotif').onclick=async()=>{ const ok=await ensureNotifyPermission(); toast(ok?'Notifikasi browser aktif':'Izin notifikasi ditolak/tidak tersedia'); });
     $('#uApprove')&&($('#uApprove').onclick=async()=>{ try{ await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'setujui'}}); toast('Usulan disetujui'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uApproveEdit')&&($('#uApproveEdit').onclick=async()=>{ const field=$('#uNilai'); try{ let nilai={}; try{ nilai=JSON.parse(field.value||'{}'); }catch(_){ showFieldError(field,'Nilai usulan harus berupa JSON yang valid.'); focusField(field); toast('Nilai usulan bukan JSON yang valid',{type:'error'}); return; } clearFieldError(field); await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'ubah_setujui', nilai_usulan:nilai}}); toast('Usulan diubah & disetujui'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uReject')&&($('#uReject').onclick=async()=>{ const alasan=prompt('Alasan tolak:')||''; try{ await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'tolak', alasan_tolak:alasan}}); toast('Usulan ditolak'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
