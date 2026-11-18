@@ -480,8 +480,13 @@
   async function tugasSayaView(){
     const uid=me().id; let html='<div class="card"><h2>Tugas Saya</h2></div>';
     for(const [col,label,field] of [['layanan_gangguan','Layanan Gangguan','ditugaskan_ke'],['pemasangan','Pemasangan','ditugaskan_ke'],['perbaikan','Perbaikan','teknisi']]){
-      try{ const r=await pb.collection(col).getList(1,50,{filter:`${field} = "${uid}" && diarsipkan = false`, sort:'-diubah_pada'});
-        html+=`<div class="card"><h3>${label}</h3>`+(r.items.length?`<div class="table-wrap"><table><tr><th>ID</th><th>Status</th><th>Info</th><th></th></tr>${r.items.map(it=>`<tr><td>${esc(it.id.slice(0,8))}</td><td>${esc(it.status||'')}</td><td>${esc((it.keluhan||it.tindakan||'').slice(0,60))}</td><td><button class="btn" data-open="${col}:${it.id}">Buka</button></td></tr>`).join('')}</table></div>`:'<div class="muted">Tidak ada.</div>')+'</div>';
+      try{
+        const r=await pb.collection(col).getList(1,50,{filter:`${field} = "${uid}" && diarsipkan = false`, sort:'-diubah_pada', expand:'pelanggan'});
+        html+=`<div class="card"><h3>${label}</h3>`+(r.items.length?`<div class="table-wrap"><table><tr><th>Pelanggan</th><th>Status</th><th>Info</th><th></th></tr>${r.items.map(it=>{
+          const pelanggan = expandName(it,'pelanggan') || nameOf(state.cache.pelanggan, it.pelanggan, it.pelanggan||'-');
+          const info = it.keluhan || it.tindakan || '-';
+          return `<tr><td>${esc(pelanggan||'-')}</td><td>${esc(it.status||'-')}</td><td>${esc(String(info).slice(0,60))}</td><td><button class="btn" data-open="${col}:${it.id}">Buka</button></td></tr>`;
+        }).join('')}</table></div>`:'<div class="muted">Tidak ada tugas.</div>')+'</div>';
       }catch(e){ html+=`<div class="card"><h3>${label}</h3><div class="error">${esc(e.message)}</div></div>`; }
     } return html;
   }
@@ -613,7 +618,15 @@
       filter += filter ? ` && (${q})` : `(${q})`;
     }
     const sort = key==='users' ? '-created' : (key==='riwayat' ? '-waktu' : (key==='pengaturan' ? '-diubah_pada' : '-dibuat_pada'));
-    let list={items:[],page:1,totalPages:1,totalItems:0}; try{ list=await pb.collection(key).getList(state.page||1,50,{filter, sort});}catch(e){ return `<div class="card"><h2>${esc(mod.label)}</h2><div class="error">${esc(e.message)}</div></div>`; }
+    const expand = (()=>{
+      if(['layanan_gangguan','pemasangan','perbaikan'].includes(key)) return 'pelanggan,teknisi,ditugaskan_ke';
+      if(key==='absen_hadir') return 'teknisi,dicatat_oleh';
+      if(key==='mutasi_inventaris') return 'barang,dicatat_oleh';
+      if(key==='usulan_perubahan') return 'pemohon,peninjau';
+      if(key==='riwayat') return 'aktor';
+      return '';
+    })();
+    let list={items:[],page:1,totalPages:1,totalItems:0}; try{ list=await pb.collection(key).getList(state.page||1,50,{filter, sort, ...(expand?{expand}:{})});}catch(e){ return `<div class="card"><h2>${esc(mod.label)}</h2><div class="error">${esc(e.message)}</div></div>`; }
     const cols=mod.cols; const rows=list.items.map(it=>`<tr>${cols.map(c=>`<td>${cell(key,c,it)}</td>`).join('')}<td><button class="btn" data-open="${key}:${it.id}">Buka</button></td></tr>`).join('');
     let extraTop = '';
     if(key==='pengaturan'){
@@ -714,13 +727,21 @@
       <h3>Ubah</h3>${(['pelanggan','inventaris_perangkat','inventaris_non_perangkat'].includes(key) && !isAdmin())?'<p class="muted">Perubahan data master akan dikirim sebagai usulan persetujuan admin (file foto tidak dikirim lewat usulan).</p>':''}<form id="editForm" novalidate>${editorForm(key,rec)}</form>${extra}</div>${comments}`;
   }
 
+  function expandName(it, field, fallback){
+    try{
+      const ex = it && it.expand && it.expand[field];
+      if(!ex) return null;
+      if(Array.isArray(ex)) return ex.map(x=>x&&(x.nama||x.nama_barang||x.email||x.keluhan||x.id)).filter(Boolean).join(', ');
+      return ex.nama || ex.nama_barang || ex.email || ex.keluhan || ex.id || null;
+    }catch(e){ return null; }
+  }
   function cell(key,c,it){
     if(c==='stok' && key==='inventaris_non_perangkat'){ const low = it.stok_minimum!=null && Number(it.stok)<=Number(it.stok_minimum); return `${esc(it.stok)} ${low?'<span class="badge low">menipis</span>':''}`; }
     let v=it[c]; if(v==null||v==='') return '<span class="muted">-</span>';
     if(typeof v === 'boolean' || c==='aktif' || c==='diarsipkan') return (v===true||v==='true')?'Ya':'Tidak';
-    if(['pelanggan'].includes(c)) return esc(nameOf(state.cache.pelanggan,v,v));
-    if(['teknisi','ditugaskan_ke','pemohon','peninjau','aktor','dicatat_oleh','pengirim','penerima'].includes(c)) return esc(nameOf(state.cache.users,v,v));
-    if(c==='barang') return esc(nameOf(state.cache.barang,v,v));
+    if(['pelanggan'].includes(c)) return esc(expandName(it,c) || nameOf(state.cache.pelanggan,v,v));
+    if(['teknisi','ditugaskan_ke','pemohon','peninjau','aktor','dicatat_oleh','pengirim','penerima'].includes(c)) return esc(expandName(it,c) || nameOf(state.cache.users,v,v));
+    if(c==='barang') return esc(expandName(it,c) || nameOf(state.cache.barang,v,v));
     if(c.includes('tanggal')||c==='waktu'||c==='jam_masuk'||c==='dibaca_pada'||c==='dibuat_pada'||c==='diubah_pada'||c==='diarsipkan_pada'||c==='diputuskan') return esc(witaDisplay(v));
     if(typeof v === 'object') return esc(JSON.stringify(v));
     return esc(String(v).slice(0,80));
