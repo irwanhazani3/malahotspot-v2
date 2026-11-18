@@ -688,12 +688,29 @@
   }
 
   async function detailView(key,id){
-    let rec; try{ rec=await pb.collection(key).getOne(id);}catch(e){ return `<div class="card error">${esc(e.message)}</div>`; }
+    const expand = (()=>{
+      if(['layanan_gangguan','pemasangan','perbaikan'].includes(key)) return 'pelanggan,teknisi,ditugaskan_ke';
+      if(key==='absen_hadir') return 'teknisi,dicatat_oleh';
+      if(key==='mutasi_inventaris') return 'barang,dicatat_oleh';
+      if(key==='usulan_perubahan') return 'pemohon,peninjau';
+      if(key==='riwayat') return 'aktor';
+      return '';
+    })();
+    let rec; try{ rec=await pb.collection(key).getOne(id, expand?{expand}:{ }); }catch(e){ return `<div class="card error">${esc(e.message)}</div>`; }
     const mod=getMod(key); const canArc = isAdmin() && rec.diarsipkan!==undefined;
     let extra='';
     if(key==='usulan_perubahan'){
       const st=rec.status; const mine = rec.pemohon===me().id;
       extra = `<div class="card" style="margin-top:8px"><h3>Aksi Usulan</h3>${isAdmin() && st==='Menunggu'?`<label>Nilai usulan (JSON, untuk "Ubah lalu setujui")</label><textarea id="uNilai" rows="4">${esc(typeof rec.nilai_usulan==='string'?rec.nilai_usulan:JSON.stringify(rec.nilai_usulan||{},null,2))}</textarea><div class="row" style="margin-top:8px"><button class="btn" id="uApprove">Setujui</button><button class="btn" id="uApproveEdit">Ubah lalu Setujui</button><button class="btn" id="uReject">Tolak</button></div>`:''}${mine && st==='Menunggu'?`<div class="row" style="margin-top:8px"><button class="btn" id="uWithdraw">Tarik Usulan Saya</button></div>`:''}<div id="uMsg" class="muted"></div></div>`;
+    }
+    if(key==='pemasangan' && !isAdmin() && rec && rec.id){
+      const pelOpts = (state.cache.pelanggan||[]).filter(p=>!p.diarsipkan).map(p=>`<option value="${esc(p.id)}" ${String(rec.pelanggan||'')===String(p.id)?'selected':''}>${esc(p.nama||p.id)}</option>`).join('');
+      extra += `<div class="card" style="margin-top:8px"><h3>Usulkan Perubahan Pelanggan</h3><p class="muted" style="margin-top:-2px">Nama pelanggan ditentukan oleh admin. Jika perlu diubah, kirim usulan dan tunggu persetujuan admin.</p>
+        <label for="usulPelanggan">Pelanggan yang diusulkan</label>
+        <select id="usulPelanggan"><option value="">-- Pilih pelanggan --</option>${pelOpts}</select>
+        <div class="row" style="margin-top:10px"><button class="btn btn-primary" type="button" id="kirimUsulPelanggan">Kirim Usulan</button></div>
+        <div id="usulPelangganMsg" class="muted" style="margin-top:8px"></div>
+      </div>`;
     }
     if(key==='users' && isAdmin()){
       try{
@@ -809,7 +826,16 @@
       pelanggan:[inp('nama','Nama'),inp('nowa','Nomor HP/WA','tel'),inp('sn_perangkat','SN'),inp('koneksi','Koneksi'),inp('vlan','VLAN'),select('teknisi','Teknisi (opsional)',users,u=>u.id,u=>u.nama||u.email,rec.teknisi),inp('link_maps','Link Maps'),inp('keterangan_lokasi','Keterangan Lokasi','textarea'),fileInput('foto_rumah','Foto Rumah')],
       layanan_gangguan:[pelangganField(rec.pelanggan,true),inp('keluhan','Keluhan','textarea'),inp('status','Status','select',['Baru','Diproses','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
       perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),pelangganField(rec.pelanggan,true),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),multiSelect('perangkat','Perangkat terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
-      pemasangan:[pelangganField(rec.pelanggan,true),inp('tanggal','Tanggal','date'),inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`, multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec)],
+      pemasangan:[
+        (isAdmin() || !(rec && rec.id))
+          ? pelangganField(rec.pelanggan,true)
+          : `<label>Pelanggan</label><input type="text" value="${esc(expandName(rec,'pelanggan') || nameOf(pels, rec.pelanggan, rec.pelanggan||'-'))}" disabled><input type="hidden" name="pelanggan" value="${esc(rec.pelanggan||'')}"><div class="muted" style="font-size:.82rem;margin-top:4px">Pelanggan ditentukan oleh admin. Jika perlu diubah, ajukan usulan perubahan di bawah.</div>`,
+        inp('tanggal','Tanggal','date'),
+        inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']),
+        isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`,
+        multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat),
+        materialEditor(rec)
+      ],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
       inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
       inventaris_non_perangkat:(()=>{
@@ -1050,6 +1076,19 @@
     $('#uApproveEdit')&&($('#uApproveEdit').onclick=async()=>{ const field=$('#uNilai'); try{ let nilai={}; try{ nilai=JSON.parse(field.value||'{}'); }catch(_){ showFieldError(field,'Nilai usulan harus berupa JSON yang valid.'); focusField(field); toast('Nilai usulan bukan JSON yang valid',{type:'error'}); return; } clearFieldError(field); await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'ubah_setujui', nilai_usulan:nilai}}); toast('Usulan diubah & disetujui'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uReject')&&($('#uReject').onclick=async()=>{ const alasan=prompt('Alasan tolak:')||''; try{ await pb.request(`/api/usulan/${state.detail}/decide`,{method:'POST',body:{action:'tolak', alasan_tolak:alasan}}); toast('Usulan ditolak'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     $('#uWithdraw')&&($('#uWithdraw').onclick=async()=>{ try{ await pb.request(`/api/usulan/${state.detail}/withdraw`,{method:'POST'}); toast('Usulan ditarik'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
+    $('#kirimUsulPelanggan')&&($('#kirimUsulPelanggan').onclick=async()=>{
+      const sel=$('#usulPelanggan'); const msg=$('#usulPelangganMsg');
+      const val=sel?String(sel.value||''):'';
+      if(msg) msg.textContent='';
+      if(!val){ if(msg) msg.innerHTML='<span class="error">Pilih pelanggan yang diusulkan terlebih dahulu.</span>'; toast('Pilih pelanggan yang diusulkan',{type:'error'}); return; }
+      try{
+        const recNow=await pb.collection('pemasangan').getOne(state.detail);
+        if(String(val)===String(recNow.pelanggan||'')){ if(msg) msg.innerHTML='<span class="error">Pelanggan yang dipilih sama dengan pelanggan saat ini.</span>'; return; }
+        await pb.collection('usulan_perubahan').create({modul:'pemasangan', record_id: state.detail, nilai_usulan:{pelanggan: val}, status:'Menunggu', pemohon: me().id});
+        toast('Usulan perubahan pelanggan dikirim, menunggu persetujuan admin');
+        if(msg) msg.innerHTML='<span class="ok">Usulan perubahan pelanggan berhasil dikirim dan menunggu persetujuan admin.</span>';
+      }catch(e){ if(msg) msg.innerHTML=`<span class="error">${esc(errorText(e))}</span>`; toast(errorText(e)||'Gagal mengirim usulan',{type:'error'}); }
+    });
     $('#clearRiwayat')&&($('#clearRiwayat').onclick=async()=>{
       const sel=$('#clearRiwayatRange');
       const range=sel?sel.value:'all';

@@ -37,6 +37,11 @@ onRecordUpdateRequest((e) => {
       if (oldA !== newA && !admin) throw new ForbiddenError('Penugasan hanya oleh admin');
       if (!admin) {
         if (!oldA || oldA !== uid) throw new ForbiddenError('Hanya teknisi yang ditugaskan');
+        if (name === 'pemasangan') {
+          const oldP = e.record.original().getString('pelanggan');
+          const newP = e.record.getString('pelanggan');
+          if (oldP !== newP) throw new ForbiddenError('Pelanggan tidak dapat diubah langsung oleh teknisi. Ajukan usulan perubahan untuk persetujuan admin.');
+        }
       }
     }
     if (name === 'perbaikan') {
