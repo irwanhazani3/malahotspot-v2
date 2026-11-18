@@ -64,14 +64,20 @@ function syncDevices(e, fromCreate){
   if(!list.length) return;
 
   const lokasi = targetLocation(e.app, e.record);
+  const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
 
   for(const id of list){
     try{
       const dev = e.app.findRecordById('inventaris_perangkat', id);
       if(dev.getBool('diarsipkan')) continue;
-      dev.set('kondisi', 'Terpasang');
-      dev.set('lokasi_pemegang', lokasi);
-      e.app.save(dev);
+      e.app.db().newQuery(
+        "UPDATE inventaris_perangkat SET kondisi = {:k}, lokasi_pemegang = {:l}, diubah_pada = {:t} WHERE id = {:id}"
+      ).bind({
+        k: 'Terpasang',
+        l: lokasi,
+        t: now,
+        id: id,
+      }).execute();
     }catch(err){ console.log('[task device sync]', col, String(err)); }
   }
 }
