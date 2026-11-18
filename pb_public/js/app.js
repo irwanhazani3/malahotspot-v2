@@ -744,6 +744,7 @@
     const uniq = (arr, field)=>[...new Set(arr.map(x=>String(x[field]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     const namaSuggestions = uniq(perangkat,'nama');
     const tipeSuggestions = uniq(perangkat,'tipe');
+    const barangNamaSuggestions = uniq(barang,'nama_barang');
     const materialRow = (idx,it={},locked=false)=>{
       const opts = (state.cache.barang||[]).filter(b=>!b.diarsipkan).map(b=>`<option value="${esc(b.id)}" ${String(it.barang||'')===String(b.id)?'selected':''}>${esc((b.nama_barang||'-')+' ('+(b.satuan||'-')+') stok:'+ (b.stok??0))}</option>`).join('');
       return `<div class="row material-row" data-idx="${idx}" style="gap:6px;align-items:flex-end;margin:6px 0;${locked?'opacity:.8':''}">
@@ -768,7 +769,7 @@
       pemasangan:[select('pelanggan','Pelanggan',pels,p=>p.id,p=>p.nama,rec.pelanggan),inp('tanggal','Tanggal','date'),inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`, multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec)],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
       inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
-      inventaris_non_perangkat:[inp('nama_barang','Nama Barang'),inp('satuan','Satuan'),inp('stok','Stok (otomatis, lewat mutasi)','number',null,true),inp('stok_minimum','Stok Minimum','number'),inp('keterangan','Keterangan','textarea')],
+      inventaris_non_perangkat:[inp('nama_barang','Nama Barang','text',null,false,barangNamaSuggestions),inp('satuan','Satuan'),inp('stok','Stok (otomatis, lewat mutasi)','number',null,true),inp('stok_minimum','Stok Minimum','number'),inp('keterangan','Keterangan','textarea')],
       mutasi_inventaris:[select('barang','Barang',barang,b=>b.id,b=>`${b.nama_barang} (${b.satuan})`,rec.barang),inp('jenis','Jenis','select',jenisMutasi),inp('jumlah','Jumlah / selisih (Penyesuaian = selisih, bukan stok akhir)','number'),inp('tanggal','Tanggal','date'),inp('arah_penyesuaian','Arah Penyesuaian (Tambah/Kurang selisih)','select',['','Tambah','Kurang']),inp('referensi_modul','Ref Modul','select',['-','Perbaikan','Pemasangan']),inp('referensi_id','Ref ID'),inp('keterangan','Keterangan','textarea')],
       usulan_perubahan:[inp('modul','Modul (koleksi)'),inp('record_id','Record ID'),inp('nilai_usulan','Nilai Usulan (JSON)','textarea'),inp('status','Status','select',['Menunggu','Disetujui','Ditolak','Ditarik']),inp('alasan_tolak','Alasan Tolak','textarea')],
       users:[inp('nama','Nama'),inp('email','Email','email'),inp('telepon','Telepon'),inp('role','Role','select',['admin','teknisi']),`<label>Aktif</label><select name="aktif"><option value="true" ${String(rec.aktif)!=='false'?'selected':''}>true</option><option value="false" ${String(rec.aktif)==='false'?'selected':''}>false</option></select>`, (rec && rec.id ? `<label>Password baru (kosongkan jika tidak diubah, min 8)</label><input name="password" type="password" minlength="8" autocomplete="new-password"><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="8" autocomplete="new-password">` : `<label>Password (min 8)</label><input name="password" type="password" minlength="8" autocomplete="new-password" required><label>Konfirmasi Password</label><input name="passwordConfirm" type="password" minlength="8" autocomplete="new-password" required>`)],
@@ -814,6 +815,25 @@
     bindMaterialRowEvents();
     syncMaterialEditor();
   }
+  function initBarangNameHelper(form, key){
+    if(!form || key!=='inventaris_non_perangkat') return;
+    const nama = fieldEl(form,'nama_barang');
+    const satuan = fieldEl(form,'satuan');
+    if(!nama || nama.__barangHelper) return;
+    nama.__barangHelper = true;
+    const apply = ()=>{
+      const val = String(nama.value||'').trim();
+      if(!val) return;
+      const items = state.cache.barang || [];
+      const match = items.find(b=>String(b.nama_barang||'').trim().toLowerCase()===val.toLowerCase());
+      if(match && satuan && !String(satuan.value||'').trim() && match.satuan){
+        satuan.value = match.satuan;
+      }
+    };
+    nama.addEventListener('change', apply);
+    nama.addEventListener('input', ()=>{ /* allow datalist selection to trigger */ });
+    nama.addEventListener('blur', apply);
+  }
 
   async function bindActions(){
     const doSearch=()=>{ if(!$('#searchBox')) return; state.search=$('#searchBox').value.trim();state.page=1;render(); };
@@ -828,6 +848,7 @@
     $('#backBtn')&&($('#backBtn').onclick=()=>{state.detail=null; render();});
     $('#arcBtn')&&($('#arcBtn').onclick=async()=>{ try{ const k=state.view,id=state.detail; const rec=await pb.collection(k).getOne(id); const to=!rec.diarsipkan; if(!confirm(to?'Arsipkan/nonaktifkan data ini?':'Pulihkan data ini?')) return; await pb.collection(k).update(id,{diarsipkan:to, diarsipkan_pada: to? new Date().toISOString():null, diarsipkan_oleh: to? me().id:null}); toast(to?'Data dinonaktifkan':'Data dipulihkan'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     initMaterialEditor();
+    initBarangNameHelper($('#editForm')||$('#newForm'), state.view);
     const editForm=$('#editForm');
     if(editForm) attachValidation(editForm,state.view,false);
     editForm&&(editForm.onsubmit=async(ev)=>{
@@ -996,6 +1017,7 @@
     try{ div.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
     prefillNewForm(key,form);
     initMaterialEditor();
+    initBarangNameHelper(form,key);
     attachValidation(form,key,true);
     const submitBtn=form ? form.querySelector('button[type="submit"]') : null;
     form.onsubmit=async(ev)=>{ ev.preventDefault(); const f=ev.target; if(!validateAndShow(f,key,true)) return; await withSubmitState(f,submitBtn,async()=>{ try{ const fd=new FormData(f); await pb.collection(key).create(formBody(key,fd,true)); toast('Data berhasil ditambahkan'); state.cache={}; render(); }catch(e){handleSubmitError(e,f);} }); };
