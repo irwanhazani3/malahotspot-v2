@@ -16,7 +16,7 @@ onRecordUpdateRequest((e) => {
       const newStatus = e.record.getString('status');
       const oldDev = String(e.record.original().get('perangkat') || '');
       const newDev = String(e.record.get('perangkat') || '');
-      if(col === 'pemasangan' && newStatus === 'Selesai' && oldStatus !== 'Selesai'){
+      if((col === 'pemasangan' || col === 'perbaikan') && newStatus === 'Selesai' && oldStatus !== 'Selesai'){
         e.record.set('tanggal', witaDateStr() + ' 00:00:00');
       }
       if(newStatus === 'Selesai' && (oldStatus !== 'Selesai' || oldDev !== newDev)){
@@ -35,7 +35,7 @@ onRecordCreateRequest((e) => {
   try{
     const col = e.collection && e.collection.name;
     if((col === 'pemasangan' || col === 'perbaikan') && e.record.getString('status') === 'Selesai'){
-      if(col === 'pemasangan'){
+      if(col === 'pemasangan' || col === 'perbaikan'){
         e.record.set('tanggal', witaDateStr() + ' 00:00:00');
       }
       const { validateDeviceAssignment } = require(__hooks + '/lib/task_device.js');

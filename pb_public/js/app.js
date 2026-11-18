@@ -1071,7 +1071,7 @@
 
   function initTaskDateHelpers(form, key){
     if(!form) return;
-    if(key === 'pemasangan'){
+    if(key === 'pemasangan' || key === 'perbaikan'){
       const statusEl = fieldEl(form,'status');
       const tanggalEl = fieldEl(form,'tanggal');
       if(!statusEl || !tanggalEl || statusEl.__autoTanggal) return;
