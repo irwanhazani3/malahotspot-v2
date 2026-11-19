@@ -831,9 +831,11 @@
   function canCreate(key){ if(key==='riwayat') return false; if(key==='pengaturan'||key==='pengumuman') return isAdmin(); return true; }
 
   function select(name,label,items,valFn,labelFn,selected){ return `<label>${esc(label)}</label><select name="${esc(name)}"><option value="">-</option>${items.map(i=>`<option value="${esc(valFn(i))}" ${String(selected||'')===String(valFn(i))?'selected':''}>${esc(labelFn(i))}</option>`).join('')}</select>`; }
-  function multiSelect(name,label,items,valFn,labelFn,selected){
+  function multiSelect(name,label,items,valFn,labelFn,selected,searchable){
     const sel = Array.isArray(selected)? selected.map(String) : (selected?[String(selected)]:[]);
-    return `<label>${esc(label)} (bisa pilih lebih dari satu)</label><select name="${esc(name)}" multiple size="5">${items.map(i=>{ const v=String(valFn(i)); return `<option value="${esc(v)}" ${sel.includes(v)?'selected':''}>${esc(labelFn(i))}</option>`; }).join('')}</select>`;
+    const search = searchable ? `<input type="text" class="ms-search" placeholder="Cari nama, tipe, atau SN..." autocomplete="off" style="margin:4px 0 6px">` : '';
+    const hint = searchable ? `<div class="muted" style="font-size:.8rem;margin-top:4px">Ketik untuk mencari perangkat (mis. SN). Pilihan yang sudah dipilih tetap tersimpan.</div>` : '';
+    return `<div class="multi-select-wrap" ${searchable?'data-searchable="1"':''}><label>${esc(label)} (bisa pilih lebih dari satu)</label>${search}<select name="${esc(name)}" multiple size="6">${items.map(i=>{ const v=String(valFn(i)); return `<option value="${esc(v)}" ${sel.includes(v)?'selected':''}>${esc(labelFn(i))}</option>`; }).join('')}</select>${hint}</div>`;
   }
   function fileInput(name,label){ return `<label>${esc(label)} (JPG/PNG/WebP, maks 2MB)</label><input name="${esc(name)}" type="file" accept="image/jpeg,image/png,image/webp">`; }
   function editorForm(key,rec={}){
@@ -890,7 +892,7 @@
     const map={
       pelanggan:[inp('nama','Nama'),inp('nowa','Nomor HP/WA','tel'),inp('sn_perangkat','SN'),inp('koneksi','Koneksi'),inp('vlan','VLAN'),select('teknisi','Teknisi (opsional)',users,u=>u.id,u=>u.nama||u.email,rec.teknisi),inp('link_maps','Link Maps'),inp('keterangan_lokasi','Keterangan Lokasi','textarea'),fileInput('foto_rumah','Foto Rumah')],
       layanan_gangguan:[pelangganField(rec.pelanggan,true),inp('keluhan','Keluhan','textarea'),inp('status','Status','select',['Baru','Diproses','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
-      perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),pelangganField(rec.pelanggan,true),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),multiSelect('perangkat','Perangkat terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif'),p=>p.id,deviceLabel, rec.perangkat),materialEditor(rec),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
+      perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),pelangganField(rec.pelanggan,true),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),multiSelect('perangkat','Perangkat terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif'),p=>p.id,deviceLabel, rec.perangkat,true),materialEditor(rec),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
       pemasangan:[
         (isAdmin() || !(rec && rec.id))
           ? pelangganField(rec.pelanggan,true)
@@ -898,7 +900,7 @@
         inp('tanggal','Tanggal','date'),
         inp('status','Status','select',['Menunggu','Dikerjakan','Selesai']),
         isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`,
-        multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat),
+        multiSelect('perangkat','Perangkat dipasang/terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif' && p.kondisi!=='Rusak'),p=>p.id,deviceLabel, rec.perangkat,true),
         materialEditor(rec)
       ],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
@@ -1084,6 +1086,27 @@
     }
   }
 
+  function initSearchableMultiSelect(form){
+    if(!form) return;
+    form.querySelectorAll('.multi-select-wrap[data-searchable="1"]').forEach(wrap=>{
+      if(wrap.__msInit) return;
+      wrap.__msInit = true;
+      const input = wrap.querySelector('.ms-search');
+      const select = wrap.querySelector('select[multiple]');
+      if(!input || !select) return;
+      const filter = ()=>{
+        const q = String(input.value||'').toLowerCase().trim();
+        Array.from(select.options).forEach(opt=>{
+          const text = String(opt.textContent||'').toLowerCase();
+          const match = !q || text.includes(q);
+          opt.hidden = !match && !opt.selected;
+        });
+      };
+      input.addEventListener('input', filter);
+      filter();
+    });
+  }
+
   async function bindActions(){
     const doSearch=()=>{ if(!$('#searchBox')) return; state.search=$('#searchBox').value.trim();state.page=1;render(); };
     $('#btnSearch')&&($('#btnSearch').onclick=doSearch);
@@ -1100,6 +1123,7 @@
     initBarangNameHelper($('#editForm')||$('#newForm'), state.view);
     initQuickPelanggan($('#editForm')||$('#newForm'));
     initTaskDateHelpers($('#editForm')||$('#newForm'), state.view);
+    initSearchableMultiSelect($('#editForm')||$('#newForm'));
     const editForm=$('#editForm');
     if(editForm) attachValidation(editForm,state.view,false);
     editForm&&(editForm.onsubmit=async(ev)=>{
@@ -1305,6 +1329,7 @@
     initBarangNameHelper(form,key);
     initQuickPelanggan(form);
     initTaskDateHelpers(form,key);
+    initSearchableMultiSelect(form);
     attachValidation(form,key,true);
     const submitBtn=form ? form.querySelector('button[type="submit"]') : null;
     form.onsubmit=async(ev)=>{ ev.preventDefault(); const f=ev.target; if(!validateAndShow(f,key,true)) return; await withSubmitState(f,submitBtn,async()=>{ try{ const fd=new FormData(f); await pb.collection(key).create(formBody(key,fd,true)); toast('Data berhasil ditambahkan'); state.cache={}; render(); }catch(e){handleSubmitError(e,f);} }); };
