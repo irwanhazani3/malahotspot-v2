@@ -798,36 +798,94 @@
     if(key==='pelanggan'){
       try{
         await loadCache();
-        const r = await pb.collection('pemasangan').getList(1, 200, {filter:`pelanggan = "${id}"`, sort:'tanggal,dibuat_pada'});
-        const items = (r.items||[]).slice().sort((a,b)=>new Date(a.tanggal||a.dibuat_pada||0)-new Date(b.tanggal||b.dibuat_pada||0));
-        const devName = (did)=>{
-          const d = (state.cache.perangkat||[]).find(x=>String(x.id)===String(did));
-          if(!d) return String(did||'-');
+        let histItems = [];
+        try{
+          const hr = await pb.collection('riwayat_pemasangan_perangkat').getList(1, 300, {filter:`pelanggan = "${id}"`, sort:'tanggal_pasang,dibuat_pada', expand:'perangkat,pemasangan,perbaikan'});
+          histItems = (hr.items||[]).slice().sort((a,b)=>new Date(a.tanggal_pasang||a.dibuat_pada||0)-new Date(b.tanggal_pasang||b.dibuat_pada||0));
+        }catch(_){ histItems = []; }
+
+        const devName = (it)=>{
+          const d = (it && it.expand && it.expand.perangkat) ? it.expand.perangkat : (state.cache.perangkat||[]).find(x=>String(x.id)===String(it.perangkat));
+          if(!d) return String(it.perangkat||'-');
           return `${d.nama||'-'}${d.tipe?(' ('+d.tipe+')'):''}${d.sn_serial?(' SN:'+d.sn_serial):''}`;
         };
-        const rows = items.map((it,idx)=>{
-          const devs = Array.isArray(it.perangkat)?it.perangkat:(it.perangkat?[it.perangkat]:[]);
-          const devTxt = devs.length ? devs.map(devName).map(esc).join(', ') : '<span class="muted">-</span>';
-          const mark = idx===0 ? ' <span class="badge">Pemasangan Pertama</span>' : ` <span class="muted">(ke-${idx+1})</span>`;
-          return `<tr><td>${idx+1}${mark}</td><td>${esc(witaDisplay(it.tanggal||it.dibuat_pada))}</td><td>${esc(it.status||'-')}</td><td>${devTxt}</td><td><button class="btn btn-ghost" data-open="pemasangan:${esc(it.id)}">Buka</button></td></tr>`;
-        }).join('');
-        extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan Perangkat</h3><p class="muted" style="margin-top:-2px">Daftar pemasangan untuk pelanggan ini (urut waktu). Pemasangan pertama dan pergantian berikutnya tercatat dari data pemasangan.</p>${items.length?`<div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal</th><th>Status</th><th>Perangkat</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">Belum ada riwayat pemasangan untuk pelanggan ini.</div>'}</div>`;
+
+        if(histItems.length){
+          const first = histItems.find(x=>String(x.jenis)==='Pemasangan Pertama') || histItems[0];
+          const aktif = histItems.filter(x=>String(x.status)==='Aktif');
+          const firstDev = first ? devName(first) : '-';
+          const firstDate = first ? witaDisplay(first.tanggal_pasang) : '-';
+          const curTxt = aktif.length ? aktif.map(devName).map(esc).join(', ') : '<span class="muted">Belum ada perangkat aktif</span>';
+          const summary = `<div class="card" style="margin-top:8px"><h3>Ringkasan Pemasangan Pelanggan</h3>
+            <div class="row" style="gap:12px;flex-wrap:wrap">
+              <div style="flex:1;min-width:220px"><div class="muted" style="font-size:.85rem">Pemasangan Pertama</div><div><b>${esc(firstDate)}</b></div><div>${esc(firstDev)}</div></div>
+              <div style="flex:1;min-width:220px"><div class="muted" style="font-size:.85rem">Perangkat Saat Ini (Aktif)</div><div>${curTxt}</div></div>
+            </div></div>`;
+
+          const rows = histItems.map((it,idx)=>{
+            const srcCol = it.pemasangan ? 'pemasangan' : (it.perbaikan ? 'perbaikan' : '');
+            const srcId = it.pemasangan || it.perbaikan || '';
+            const srcBtn = srcCol && srcId ? `<button class="btn btn-ghost" data-open="${esc(srcCol)}:${esc(srcId)}">Buka</button>` : '<span class="muted">-</span>';
+            const dilepas = it.tanggal_dilepas ? esc(witaDisplay(it.tanggal_dilepas)) : '<span class="muted">-</span>';
+            const jenisBadge = String(it.jenis)==='Pemasangan Pertama' ? '<span class="badge">Pemasangan Pertama</span>' : `<span class="badge">${esc(it.jenis||'Penggantian')}</span>`;
+            const statusBadge = String(it.status)==='Aktif' ? '<span class="badge ok">Aktif</span>' : `<span class="badge">${esc(it.status||'-')}</span>`;
+            return `<tr><td>${idx+1}</td><td>${esc(witaDisplay(it.tanggal_pasang))}</td><td>${dilepas}</td><td>${jenisBadge}</td><td>${statusBadge}</td><td>${esc(devName(it))}</td><td>${srcBtn}</td></tr>`;
+          }).join('');
+          extra += `${summary}<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan & Pergantian Perangkat</h3><p class="muted" style="margin-top:-2px">Seluruh riwayat pemasangan perangkat pelanggan ini tercatat (pertama dan setiap pergantian).</p><div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal Pasang</th><th>Tanggal Dilepas</th><th>Jenis</th><th>Status</th><th>Perangkat</th><th>Sumber</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        } else {
+          // fallback dari data pemasangan (kompatibilitas)
+          const r = await pb.collection('pemasangan').getList(1, 200, {filter:`pelanggan = "${id}"`, sort:'tanggal,dibuat_pada'});
+          const items = (r.items||[]).slice().sort((a,b)=>new Date(a.tanggal||a.dibuat_pada||0)-new Date(b.tanggal||b.dibuat_pada||0));
+          const devNameById = (did)=>{
+            const d = (state.cache.perangkat||[]).find(x=>String(x.id)===String(did));
+            if(!d) return String(did||'-');
+            return `${d.nama||'-'}${d.tipe?(' ('+d.tipe+')'):''}${d.sn_serial?(' SN:'+d.sn_serial):''}`;
+          };
+          const rows = items.map((it,idx)=>{
+            const devs = Array.isArray(it.perangkat)?it.perangkat:(it.perangkat?[it.perangkat]:[]);
+            const devTxt = devs.length ? devs.map(devNameById).map(esc).join(', ') : '<span class="muted">-</span>';
+            const mark = idx===0 ? ' <span class="badge">Pemasangan Pertama</span>' : ` <span class="muted">(ke-${idx+1})</span>`;
+            return `<tr><td>${idx+1}${mark}</td><td>${esc(witaDisplay(it.tanggal||it.dibuat_pada))}</td><td>${esc(it.status||'-')}</td><td>${devTxt}</td><td><button class="btn btn-ghost" data-open="pemasangan:${esc(it.id)}">Buka</button></td></tr>`;
+          }).join('');
+          extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan Perangkat</h3><p class="muted" style="margin-top:-2px">Riwayat dari data pemasangan (riwayat eksplisit belum tersedia).</p>${items.length?`<div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal</th><th>Status</th><th>Perangkat</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">Belum ada riwayat pemasangan untuk pelanggan ini.</div>'}</div>`;
+        }
       }catch(e){ extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan Perangkat</h3><div class="error">${esc(e.message||'Gagal memuat riwayat pemasangan')}</div></div>`; }
     }
     if(key==='inventaris_perangkat'){
       try{
         await loadCache();
-        const [rp, rr] = await Promise.all([
-          pb.collection('pemasangan').getList(1,200,{sort:'-tanggal,-dibuat_pada', expand:'pelanggan'}),
-          pb.collection('perbaikan').getList(1,200,{sort:'-tanggal,-dibuat_pada', expand:'pelanggan'})
-        ]);
-        const hasDev = (it)=>{ const d=Array.isArray(it.perangkat)?it.perangkat:(it.perangkat?[it.perangkat]:[]); return d.map(String).includes(String(id)); };
-        const list = []
-          .concat((rp.items||[]).filter(hasDev).map(it=>({modul:'Pemasangan', col:'pemasangan', tanggal:it.tanggal||it.dibuat_pada, status:it.status, pelanggan: expandName(it,'pelanggan')||nameOf(state.cache.pelanggan,it.pelanggan,it.pelanggan||'-'), rid:it.id})))
-          .concat((rr.items||[]).filter(hasDev).map(it=>({modul:'Perbaikan', col:'perbaikan', tanggal:it.tanggal||it.dibuat_pada, status:it.status, pelanggan: expandName(it,'pelanggan')||nameOf(state.cache.pelanggan,it.pelanggan,it.pelanggan||'-'), rid:it.id})))
-          .sort((a,b)=>new Date(a.tanggal||0)-new Date(b.tanggal||0));
-        const rows = list.map((it,idx)=>`<tr><td>${idx+1}</td><td>${esc(witaDisplay(it.tanggal))}</td><td>${esc(it.modul)}</td><td>${esc(it.pelanggan||'-')}</td><td>${esc(it.status||'-')}</td><td><button class="btn btn-ghost" data-open="${esc(it.col)}:${esc(it.rid)}">Buka</button></td></tr>`).join('');
-        extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan/Pemakaian Perangkat</h3><p class="muted" style="margin-top:-2px">Riwayat tugas (pemasangan/perbaikan) yang menggunakan perangkat ini, beserta pelanggan dan tanggalnya (urut waktu).</p>${list.length?`<div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal</th><th>Modul</th><th>Pelanggan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">Belum ada riwayat pemasangan/pemakaian untuk perangkat ini.</div>'}</div>`;
+        let histItems = [];
+        try{
+          const hr = await pb.collection('riwayat_pemasangan_perangkat').getList(1, 300, {filter:`perangkat = "${id}"`, sort:'tanggal_pasang,dibuat_pada', expand:'pelanggan,pemasangan,perbaikan'});
+          histItems = (hr.items||[]).slice().sort((a,b)=>new Date(a.tanggal_pasang||a.dibuat_pada||0)-new Date(b.tanggal_pasang||b.dibuat_pada||0));
+        }catch(_){ histItems = []; }
+
+        if(histItems.length){
+          const rows = histItems.map((it,idx)=>{
+            const pel = expandName(it,'pelanggan') || nameOf(state.cache.pelanggan, it.pelanggan, it.pelanggan||'-');
+            const srcCol = it.pemasangan ? 'pemasangan' : (it.perbaikan ? 'perbaikan' : '');
+            const srcId = it.pemasangan || it.perbaikan || '';
+            const srcBtn = srcCol && srcId ? `<button class="btn btn-ghost" data-open="${esc(srcCol)}:${esc(srcId)}">Buka</button>` : '<span class="muted">-</span>';
+            const dilepas = it.tanggal_dilepas ? esc(witaDisplay(it.tanggal_dilepas)) : '<span class="muted">-</span>';
+            const jenisBadge = String(it.jenis)==='Pemasangan Pertama' ? '<span class="badge">Pemasangan Pertama</span>' : `<span class="badge">${esc(it.jenis||'Penggantian')}</span>`;
+            const statusBadge = String(it.status)==='Aktif' ? '<span class="badge ok">Aktif</span>' : `<span class="badge">${esc(it.status||'-')}</span>`;
+            return `<tr><td>${idx+1}</td><td>${esc(witaDisplay(it.tanggal_pasang))}</td><td>${dilepas}</td><td>${jenisBadge}</td><td>${statusBadge}</td><td>${esc(pel||'-')}</td><td>${srcBtn}</td></tr>`;
+          }).join('');
+          extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan/Pemakaian Perangkat</h3><p class="muted" style="margin-top:-2px">Riwayat pemasangan dan pergantian perangkat ini pada pelanggan (tercatat otomatis).</p><div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal Pasang</th><th>Tanggal Dilepas</th><th>Jenis</th><th>Status</th><th>Pelanggan</th><th>Sumber</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        } else {
+          // fallback dari data tugas
+          const [rp, rr] = await Promise.all([
+            pb.collection('pemasangan').getList(1,200,{sort:'-tanggal,-dibuat_pada', expand:'pelanggan'}),
+            pb.collection('perbaikan').getList(1,200,{sort:'-tanggal,-dibuat_pada', expand:'pelanggan'})
+          ]);
+          const hasDev = (it)=>{ const d=Array.isArray(it.perangkat)?it.perangkat:(it.perangkat?[it.perangkat]:[]); return d.map(String).includes(String(id)); };
+          const list = []
+            .concat((rp.items||[]).filter(hasDev).map(it=>({modul:'Pemasangan', col:'pemasangan', tanggal:it.tanggal||it.dibuat_pada, status:it.status, pelanggan: expandName(it,'pelanggan')||nameOf(state.cache.pelanggan,it.pelanggan,it.pelanggan||'-'), rid:it.id})))
+            .concat((rr.items||[]).filter(hasDev).map(it=>({modul:'Perbaikan', col:'perbaikan', tanggal:it.tanggal||it.dibuat_pada, status:it.status, pelanggan: expandName(it,'pelanggan')||nameOf(state.cache.pelanggan,it.pelanggan,it.pelanggan||'-'), rid:it.id})))
+            .sort((a,b)=>new Date(a.tanggal||0)-new Date(b.tanggal||0));
+          const rows = list.map((it,idx)=>`<tr><td>${idx+1}</td><td>${esc(witaDisplay(it.tanggal))}</td><td>${esc(it.modul)}</td><td>${esc(it.pelanggan||'-')}</td><td>${esc(it.status||'-')}</td><td><button class="btn btn-ghost" data-open="${esc(it.col)}:${esc(it.rid)}">Buka</button></td></tr>`).join('');
+          extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan/Pemakaian Perangkat</h3><p class="muted" style="margin-top:-2px">Riwayat dari data tugas (riwayat eksplisit belum tersedia).</p>${list.length?`<div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal</th><th>Modul</th><th>Pelanggan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">Belum ada riwayat pemasangan/pemakaian untuk perangkat ini.</div>'}</div>`;
+        }
       }catch(e){ extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan/Pemakaian Perangkat</h3><div class="error">${esc(e.message||'Gagal memuat riwayat perangkat')}</div></div>`; }
     }
     let comments='';
@@ -939,7 +997,7 @@
         materialEditor(rec)
       ],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
-      inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
+      inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif','Cabutan']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
       inventaris_non_perangkat:(()=>{
         const curNama = String(rec.nama_barang||'').trim();
         const matched = barangPilihOptions.find(b=>String(b.nama_barang||'').trim().toLowerCase()===curNama.toLowerCase());

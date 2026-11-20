@@ -53,6 +53,10 @@ onRecordAfterUpdateSuccess((e) => {
     const { syncDevices } = require(__hooks + '/lib/task_device.js');
     syncDevices(e, false);
   }catch(err){ console.log('[task device update]', String(err)); }
+  try{
+    const { recordInstallHistory } = require(__hooks + '/lib/install_history.js');
+    recordInstallHistory(e.app, e.record, false);
+  }catch(err){ console.log('[install history update]', String(err)); }
   e.next();
 });
 
@@ -61,5 +65,9 @@ onRecordAfterCreateSuccess((e) => {
     const { syncDevices } = require(__hooks + '/lib/task_device.js');
     syncDevices(e, true);
   }catch(err){ console.log('[task device create]', String(err)); }
+  try{
+    const { recordInstallHistory } = require(__hooks + '/lib/install_history.js');
+    recordInstallHistory(e.app, e.record, true);
+  }catch(err){ console.log('[install history create]', String(err)); }
   e.next();
 });
