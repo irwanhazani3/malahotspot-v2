@@ -795,6 +795,41 @@
         ${rows.length?`<div class="table-wrap"><table><thead><tr><th>Modul</th><th>ID</th><th>Status</th><th>Info</th><th>Aksi</th></tr></thead><tbody>${rows.map(t=>`<tr><td>${esc(t.modul)}</td><td>${esc(t.id.slice(0,8))}</td><td>${esc(t.status||'')}</td><td>${esc(String(t.info).slice(0,50))}</td><td><button class="btn" data-open="${t.modul==='Gangguan'?'layanan_gangguan':t.modul==='Pemasangan'?'pemasangan':'perbaikan'}:${t.id}">Buka</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Tidak ada penugasan aktif.</div>'}</div>`;
       }catch(e){ extra += `<div class="card"><div class="error">${esc(e.message)}</div></div>`; }
     }
+    if(key==='pelanggan'){
+      try{
+        await loadCache();
+        const r = await pb.collection('pemasangan').getList(1, 200, {filter:`pelanggan = "${id}"`, sort:'tanggal,dibuat_pada'});
+        const items = (r.items||[]).slice().sort((a,b)=>new Date(a.tanggal||a.dibuat_pada||0)-new Date(b.tanggal||b.dibuat_pada||0));
+        const devName = (did)=>{
+          const d = (state.cache.perangkat||[]).find(x=>String(x.id)===String(did));
+          if(!d) return String(did||'-');
+          return `${d.nama||'-'}${d.tipe?(' ('+d.tipe+')'):''}${d.sn_serial?(' SN:'+d.sn_serial):''}`;
+        };
+        const rows = items.map((it,idx)=>{
+          const devs = Array.isArray(it.perangkat)?it.perangkat:(it.perangkat?[it.perangkat]:[]);
+          const devTxt = devs.length ? devs.map(devName).map(esc).join(', ') : '<span class="muted">-</span>';
+          const mark = idx===0 ? ' <span class="badge">Pemasangan Pertama</span>' : ` <span class="muted">(ke-${idx+1})</span>`;
+          return `<tr><td>${idx+1}${mark}</td><td>${esc(witaDisplay(it.tanggal||it.dibuat_pada))}</td><td>${esc(it.status||'-')}</td><td>${devTxt}</td><td><button class="btn btn-ghost" data-open="pemasangan:${esc(it.id)}">Buka</button></td></tr>`;
+        }).join('');
+        extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan Perangkat</h3><p class="muted" style="margin-top:-2px">Daftar pemasangan untuk pelanggan ini (urut waktu). Pemasangan pertama dan pergantian berikutnya tercatat dari data pemasangan.</p>${items.length?`<div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal</th><th>Status</th><th>Perangkat</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">Belum ada riwayat pemasangan untuk pelanggan ini.</div>'}</div>`;
+      }catch(e){ extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan Perangkat</h3><div class="error">${esc(e.message||'Gagal memuat riwayat pemasangan')}</div></div>`; }
+    }
+    if(key==='inventaris_perangkat'){
+      try{
+        await loadCache();
+        const [rp, rr] = await Promise.all([
+          pb.collection('pemasangan').getList(1,200,{sort:'-tanggal,-dibuat_pada', expand:'pelanggan'}),
+          pb.collection('perbaikan').getList(1,200,{sort:'-tanggal,-dibuat_pada', expand:'pelanggan'})
+        ]);
+        const hasDev = (it)=>{ const d=Array.isArray(it.perangkat)?it.perangkat:(it.perangkat?[it.perangkat]:[]); return d.map(String).includes(String(id)); };
+        const list = []
+          .concat((rp.items||[]).filter(hasDev).map(it=>({modul:'Pemasangan', col:'pemasangan', tanggal:it.tanggal||it.dibuat_pada, status:it.status, pelanggan: expandName(it,'pelanggan')||nameOf(state.cache.pelanggan,it.pelanggan,it.pelanggan||'-'), rid:it.id})))
+          .concat((rr.items||[]).filter(hasDev).map(it=>({modul:'Perbaikan', col:'perbaikan', tanggal:it.tanggal||it.dibuat_pada, status:it.status, pelanggan: expandName(it,'pelanggan')||nameOf(state.cache.pelanggan,it.pelanggan,it.pelanggan||'-'), rid:it.id})))
+          .sort((a,b)=>new Date(a.tanggal||0)-new Date(b.tanggal||0));
+        const rows = list.map((it,idx)=>`<tr><td>${idx+1}</td><td>${esc(witaDisplay(it.tanggal))}</td><td>${esc(it.modul)}</td><td>${esc(it.pelanggan||'-')}</td><td>${esc(it.status||'-')}</td><td><button class="btn btn-ghost" data-open="${esc(it.col)}:${esc(it.rid)}">Buka</button></td></tr>`).join('');
+        extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan/Pemakaian Perangkat</h3><p class="muted" style="margin-top:-2px">Riwayat tugas (pemasangan/perbaikan) yang menggunakan perangkat ini, beserta pelanggan dan tanggalnya (urut waktu).</p>${list.length?`<div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal</th><th>Modul</th><th>Pelanggan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted">Belum ada riwayat pemasangan/pemakaian untuk perangkat ini.</div>'}</div>`;
+      }catch(e){ extra += `<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan/Pemakaian Perangkat</h3><div class="error">${esc(e.message||'Gagal memuat riwayat perangkat')}</div></div>`; }
+    }
     let comments='';
     if(mod && mod.task){
       let cm=[]; try{ cm=(await pb.collection('komentar_tugas').getList(1,50,{filter:`modul_referensi = "${key}" && referensi_id = "${id}"`, sort:'dibuat_pada'})).items; }catch{}
