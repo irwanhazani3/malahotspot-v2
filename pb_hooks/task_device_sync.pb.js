@@ -8,25 +8,38 @@ function witaDateStr(){
   return `${y}-${m}-${d}`;
 }
 
+function witaDateTimeStr(){
+  const w = new Date(Date.now() + 8 * 3600 * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${w.getUTCFullYear()}-${pad(w.getUTCMonth()+1)}-${pad(w.getUTCDate())} ${pad(w.getUTCHours())}:${pad(w.getUTCMinutes())}:${pad(w.getUTCSeconds())}`;
+}
+
+const TASK_COLS = ['layanan_gangguan', 'pemasangan', 'perbaikan'];
+
 onRecordUpdateRequest((e) => {
   try{
     const col = e.collection && e.collection.name;
-    if(col === 'pemasangan' || col === 'perbaikan'){
+    if(TASK_COLS.includes(col)){
       const oldStatus = e.record.original().getString('status');
       const newStatus = e.record.getString('status');
       const oldDev = String(e.record.original().get('perangkat') || '');
       const newDev = String(e.record.get('perangkat') || '');
-      if((col === 'pemasangan' || col === 'perbaikan') && newStatus === 'Selesai' && oldStatus !== 'Selesai'){
-        e.record.set('tanggal', witaDateStr() + ' 00:00:00');
+
+      if(newStatus === 'Selesai' && oldStatus !== 'Selesai'){
+        e.record.set('selesai_pada', witaDateTimeStr());
+        if(col === 'pemasangan' || col === 'perbaikan'){
+          e.record.set('tanggal', witaDateStr() + ' 00:00:00');
+        }
       }
-      if(newStatus === 'Selesai' && (oldStatus !== 'Selesai' || oldDev !== newDev)){
+
+      if((col === 'pemasangan' || col === 'perbaikan') && newStatus === 'Selesai' && (oldStatus !== 'Selesai' || oldDev !== newDev)){
         const { validateDeviceAssignment } = require(__hooks + '/lib/task_device.js');
         validateDeviceAssignment(e.app, e.record);
       }
     }
   }catch(err){
     if(err instanceof BadRequestError || err instanceof ForbiddenError) throw err;
-    console.log('[task device validate]', String(err));
+    console.log('[task update]', String(err));
   }
   e.next();
 });
@@ -34,16 +47,17 @@ onRecordUpdateRequest((e) => {
 onRecordCreateRequest((e) => {
   try{
     const col = e.collection && e.collection.name;
-    if((col === 'pemasangan' || col === 'perbaikan') && e.record.getString('status') === 'Selesai'){
+    if(TASK_COLS.includes(col) && e.record.getString('status') === 'Selesai'){
+      e.record.set('selesai_pada', witaDateTimeStr());
       if(col === 'pemasangan' || col === 'perbaikan'){
         e.record.set('tanggal', witaDateStr() + ' 00:00:00');
+        const { validateDeviceAssignment } = require(__hooks + '/lib/task_device.js');
+        validateDeviceAssignment(e.app, e.record);
       }
-      const { validateDeviceAssignment } = require(__hooks + '/lib/task_device.js');
-      validateDeviceAssignment(e.app, e.record);
     }
   }catch(err){
     if(err instanceof BadRequestError || err instanceof ForbiddenError) throw err;
-    console.log('[task device validate]', String(err));
+    console.log('[task create]', String(err));
   }
   e.next();
 });

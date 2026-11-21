@@ -314,7 +314,7 @@
 
   function layout(content){
     const u=me();
-    const navItems=[['dashboard','Dashboard'],['tugas_saya','Tugas Saya'],['qr_absen','QR Absen'],['pengumuman','Pengumuman'],['pesan','Pesan'],...MODULES.filter(m=>!m.admin||isAdmin()).map(m=>[m.key,m.label]),['logout','Keluar']];
+    const navItems=[['dashboard','Dashboard'],['tugas_saya','Tugas Saya'],['tugas_lembur','Tugas Lembur'],['qr_absen','QR Absen'],['pengumuman','Pengumuman'],['pesan','Pesan'],...MODULES.filter(m=>!m.admin||isAdmin()).map(m=>[m.key,m.label]),['logout','Keluar']];
     const nav = navItems.map(([k,l])=>{
       const c = (state.notif && state.notif.by && state.notif.by[k]) || 0;
       const badge = `<span id="navBadge-${esc(k)}" class="notif-badge nav-badge" data-key="${esc(k)}" style="${c>0?'':'display:none'}">${c>99?'99+':c}</span>`;
@@ -377,6 +377,7 @@
     let html=''; try{
       if(state.view==='dashboard') html=await dashboardView();
       else if(state.view==='tugas_saya') html=await tugasSayaView();
+      else if(state.view==='tugas_lembur') html=await tugasLemburView();
       else if(state.view==='qr_absen') html=await qrAbsenView();
       else if(state.view==='pengumuman') html=await pengumumanView();
       else if(state.view==='pesan') html=await pesanView();
@@ -555,6 +556,62 @@
     } return html;
   }
 
+  function witaHHMMFromStored(v){
+    if(!v) return '';
+    const s = String(v).trim();
+    if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s) && !/Z$/i.test(s) && s.indexOf('T')===-1){
+      return s.slice(11,16);
+    }
+    try{
+      const d = new Date(s);
+      if(isNaN(d)) return '';
+      const w = new Date(d.getTime() + 8*3600*1000);
+      const p=n=>String(n).padStart(2,'0');
+      return `${p(w.getUTCHours())}:${p(w.getUTCMinutes())}`;
+    }catch(e){ return ''; }
+  }
+
+  async function tugasLemburView(){
+    await loadCache();
+    const map = await getPengaturanMap();
+    let jamMulai = String(nilaiSetting(map['jam_mulai_lembur'],'17:00') || '17:00');
+    if(!/^\d{2}:\d{2}$/.test(jamMulai)) jamMulai = '17:00';
+
+    const defs = [
+      {col:'layanan_gangguan', label:'Layanan Gangguan', infoField:'keluhan', personField:'ditugaskan_ke', expand:'pelanggan,ditugaskan_ke'},
+      {col:'pemasangan', label:'Pemasangan', infoField:null, personField:'ditugaskan_ke', expand:'pelanggan,ditugaskan_ke'},
+      {col:'perbaikan', label:'Perbaikan', infoField:'tindakan', personField:'teknisi', expand:'pelanggan,teknisi'},
+    ];
+    let rows = [];
+    let errs = [];
+    for(const d of defs){
+      try{
+        const r = await pb.collection(d.col).getList(1,200,{filter:'status = "Selesai" && diarsipkan = false', sort:'-selesai_pada,-diubah_pada', expand:d.expand});
+        (r.items||[]).forEach(it=>{
+          const selesai = it.selesai_pada || it.diubah_pada || '';
+          const hhmm = witaHHMMFromStored(selesai);
+          if(hhmm && hhmm >= jamMulai){
+            const pelanggan = expandName(it,'pelanggan') || nameOf(state.cache.pelanggan, it.pelanggan, it.pelanggan||'-');
+            const person = d.personField==='teknisi'
+              ? (expandName(it,'teknisi') || nameOf(state.cache.users, it.teknisi, it.teknisi||'-'))
+              : (expandName(it,'ditugaskan_ke') || nameOf(state.cache.users, it.ditugaskan_ke, it.ditugaskan_ke||'-'));
+            const info = d.infoField ? (it[d.infoField]||'-') : '-';
+            rows.push({col:d.col,label:d.label,id:it.id,pelanggan,person,info,selesai,hhmm});
+          }
+        });
+      }catch(e){ errs.push(`${d.label}: ${esc(e.message||e)}`); }
+    }
+    rows.sort((a,b)=>String(b.selesai||'').localeCompare(String(a.selesai||'')));
+
+    const body = rows.length
+      ? `<div class="table-wrap"><table><thead><tr><th>Modul</th><th>Pelanggan</th><th>Petugas</th><th>Waktu Selesai (WITA)</th><th>Info</th><th>Aksi</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.label)}</td><td>${esc(x.pelanggan||'-')}</td><td>${esc(x.person||'-')}</td><td>${esc(x.selesai ? (String(x.selesai).indexOf('T')!==-1 || /Z$/i.test(String(x.selesai)) ? witaDisplay(x.selesai) : String(x.selesai).slice(0,16)) : '-')} <span class="badge">Lembur</span></td><td>${esc(String(x.info||'-').slice(0,60))}</td><td><button class="btn btn-ghost" data-open="${esc(x.col)}:${esc(x.id)}">Buka</button></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="muted">Belum ada tugas selesai pada jam lembur.</div>';
+
+    const errHtml = errs.length ? `<div class="card"><div class="error">${errs.join('<br>')}</div></div>` : '';
+    const infoAdmin = isAdmin() ? `<p class="muted" style="margin:4px 0 0">Jam mulai lembur dapat diubah di menu <b>Pengaturan</b>.</p>` : '';
+    return `<div class="card"><h2 style="margin:0 0 4px">Tugas Lembur</h2><p class="muted" style="margin:0">Daftar tugas yang berstatus <b>Selesai</b> pada atau setelah pukul <b>${esc(jamMulai)} WITA</b>.</p>${infoAdmin}</div>${errHtml}<div class="card"><h3 style="margin-top:0">Daftar Tugas Selesai (Lembur)</h3>${body}</div>`;
+  }
+
   async function qrAbsenView(){
     if(isAdmin()){
       return `<div class="card"><h2>QR Absen (Admin)</h2><div class="row"><button class="btn" id="genQr">Tampilkan/Refresh QR</button><button class="btn" id="refreshToday">Refresh Absen Hari Ini</button><span id="qrInfo" class="muted"></span></div>
@@ -605,6 +662,8 @@
     const intervalSheets = Math.max(1, Number(nilaiSetting(map['interval_sinkron_sheets'],5)) || 5);
     const retensiRaw = nilaiSetting(map['retensi_riwayat_hari'],0);
     const retensi = (retensiRaw===0 || retensiRaw==='0' || retensiRaw==='') ? 0 : Math.max(0, Number(retensiRaw) || 0);
+    let jamMulaiLembur = String(nilaiSetting(map['jam_mulai_lembur'],'17:00') || '17:00');
+    if(!/^\d{2}:\d{2}$/.test(jamMulaiLembur)) jamMulaiLembur='17:00';
     const lastSyncVal = nilaiSetting(map['sheets_last_sync'],'');
     let lastSyncTxt = 'Belum pernah';
     if(lastSyncVal){
@@ -633,6 +692,13 @@
         <label>Status sinkron terakhir</label>
         <div class="card" style="padding:12px 14px;background:var(--bg-surface-alt);box-shadow:none"><b>${esc(lastSyncTxt)}</b><div class="muted" style="font-size:.82rem;margin-top:2px">Informasi ini diperbarui otomatis oleh sistem.</div></div>
         <div class="row" style="margin-top:12px;align-items:center"><button class="btn btn-primary" type="button" id="syncSheetsNow">Sinkronkan Sekarang</button><span id="syncSheetsMsg" class="muted" style="font-size:.85rem"></span></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Lembur</h3>
+        <p class="muted" style="margin-top:-2px">Tentukan batas mulai jam lembur (WITA). Tugas yang <b>selesai</b> pada atau setelah jam ini akan masuk ke daftar <b>Tugas Lembur</b>.</p>
+        <label for="set_jam_mulai_lembur">Jam mulai lembur (WITA)</label>
+        <input id="set_jam_mulai_lembur" name="jam_mulai_lembur" type="time" value="${esc(jamMulaiLembur)}">
+        <div class="muted" style="font-size:.82rem;margin-top:4px">Contoh: <b>17:00</b> berarti tugas yang selesai pukul 17:00 atau lebih dihitung lembur.</div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Riwayat Aktivitas</h3>
@@ -1329,6 +1395,7 @@
         const jamTutup=String($('#set_jam_tutup').value||'').trim();
         const intervalSheets=Math.round(Number($('#set_interval_sheets').value));
         const retensi=Math.round(Number($('#set_retensi').value));
+        const jamMulaiLembur=String($('#set_jam_mulai_lembur')?$('#set_jam_mulai_lembur').value:'17:00'||'17:00').trim();
 
         clearFormErrors(form);
         const errs=[];
@@ -1336,6 +1403,7 @@
         if(!/^\d{2}:\d{2}$/.test(jamTutup)) errs.push({el:$('#set_jam_tutup'), msg:'Batas akhir absen harus berupa jam yang valid (contoh 23:59).'});
         if(!(intervalSheets>=1)) errs.push({el:$('#set_interval_sheets'), msg:'Interval sinkron minimal 1 menit.'});
         if(!(retensi>=0) || isNaN(retensi)) errs.push({el:$('#set_retensi'), msg:'Lama simpan riwayat harus 0 (nonaktif) atau lebih.'});
+        if(!/^\d{2}:\d{2}$/.test(jamMulaiLembur)) errs.push({el:$('#set_jam_mulai_lembur'), msg:'Jam mulai lembur harus berupa jam yang valid (contoh 17:00).'});
         if(errs.length){
           errs.forEach(er=>showFieldError(er.el,er.msg));
           showFormAlert(form, errs.map(er=>er.msg));
@@ -1356,6 +1424,7 @@
             await upsert('jam_tutup_absen', jamTutup);
             await upsert('interval_sinkron_sheets', intervalSheets);
             await upsert('retensi_riwayat_hari', retensi);
+            await upsert('jam_mulai_lembur', jamMulaiLembur);
             toast('Pengaturan berhasil disimpan');
             render();
           }catch(e){ handleSubmitError(e,form); }
