@@ -609,7 +609,7 @@
 
     const errHtml = errs.length ? `<div class="card"><div class="error">${errs.join('<br>')}</div></div>` : '';
     const infoAdmin = isAdmin() ? `<p class="muted" style="margin:4px 0 0">Jam mulai lembur dapat diubah di menu <b>Pengaturan</b>.</p>` : '';
-    return `<div class="card"><h2 style="margin:0 0 4px">Tugas Lembur</h2><p class="muted" style="margin:0">Daftar tugas yang berstatus <b>Selesai</b> pada atau setelah pukul <b>${esc(jamMulai)} WITA</b>.</p>${infoAdmin}</div>${errHtml}<div class="card"><h3 style="margin-top:0">Daftar Tugas Selesai (Lembur)</h3>${body}</div>`;
+    return `<div class="card"><h2 style="margin:0 0 4px">Tugas Lembur</h2><p class="muted" style="margin:0">Daftar tugas yang berstatus <b>Selesai</b> pada atau setelah pukul <b>${esc(jamMulai)} WITA</b> (format 24 jam).</p>${infoAdmin}</div>${errHtml}<div class="card"><h3 style="margin-top:0">Daftar Tugas Selesai (Lembur)</h3>${body}</div>`;
   }
 
   async function qrAbsenView(){
@@ -679,9 +679,9 @@
         <label for="set_interval_qr">Masa berlaku kode QR (detik)</label>
         <input id="set_interval_qr" name="interval_qr" type="number" min="5" step="1" value="${esc(String(intervalQr))}">
         <div class="muted" style="font-size:.82rem;margin-top:4px">Kode QR akan diperbarui otomatis setiap beberapa detik. Contoh umum: <b>30</b> detik.</div>
-        <label for="set_jam_tutup">Batas akhir absen (jam, WITA)</label>
-        <input id="set_jam_tutup" name="jam_tutup_absen" type="time" value="${esc(jamTutup)}">
-        <div class="muted" style="font-size:.82rem;margin-top:4px">Setelah jam ini, absen lewat QR tidak diterima. Contoh: <b>23:59</b>.</div>
+        <label for="set_jam_tutup">Batas akhir absen (jam, WITA, format 24 jam)</label>
+        <input id="set_jam_tutup" name="jam_tutup_absen" type="time" step="60" value="${esc(jamTutup)}">
+        <div class="muted" style="font-size:.82rem;margin-top:4px">Setelah jam ini, absen lewat QR tidak diterima. Contoh: <b>23:59</b> (format 24 jam).</div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Sinkron Google Sheets</h3>
@@ -696,9 +696,9 @@
       <div class="card">
         <h3 style="margin-top:0">Lembur</h3>
         <p class="muted" style="margin-top:-2px">Tentukan batas mulai jam lembur (WITA). Tugas yang <b>selesai</b> pada atau setelah jam ini akan masuk ke daftar <b>Tugas Lembur</b>.</p>
-        <label for="set_jam_mulai_lembur">Jam mulai lembur (WITA)</label>
-        <input id="set_jam_mulai_lembur" name="jam_mulai_lembur" type="time" value="${esc(jamMulaiLembur)}">
-        <div class="muted" style="font-size:.82rem;margin-top:4px">Contoh: <b>17:00</b> berarti tugas yang selesai pukul 17:00 atau lebih dihitung lembur.</div>
+        <label for="set_jam_mulai_lembur">Jam mulai lembur (WITA, format 24 jam)</label>
+        <input id="set_jam_mulai_lembur" name="jam_mulai_lembur" type="time" step="60" value="${esc(jamMulaiLembur)}">
+        <div class="muted" style="font-size:.82rem;margin-top:4px">Contoh: <b>17:00</b> (format 24 jam) berarti tugas yang selesai pukul 17:00 atau lebih dihitung lembur.</div>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Riwayat Aktivitas</h3>
