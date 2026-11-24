@@ -128,7 +128,7 @@
     if(el.type==='file'){
       const f=el.files && el.files[0];
       if(!f) return '';
-      if(f.size>2*1024*1024) return 'Ukuran foto maksimal 2MB.';
+      if(f.size>15*1024*1024) return 'Ukuran foto maksimal 15MB sebelum kompresi.';
       if(f.type && !['image/jpeg','image/png','image/webp'].includes(f.type)) return 'Format foto harus JPG, PNG, atau WebP.';
       return '';
     }
@@ -626,7 +626,7 @@
 
   async function pengumumanView(){
     const canManage=isAdmin(); let list={items:[]}; try{ list=await pb.collection('pengumuman').getList(1,50,{sort:'-dibuat_pada'});}catch(e){return `<div class="card error">${esc(e.message)}</div>`;}
-    const form = canManage?`<div class="card"><h3>Buat Pengumuman</h3><form id="annForm" novalidate><label>Judul</label><input name="judul" placeholder="Judul pengumuman" required><label>Isi</label><textarea name="isi" placeholder="Tulis isi pengumuman..." required></textarea><label>Foto (opsional)</label><input type="file" name="foto" accept="image/jpeg,image/png,image/webp"><div style="margin-top:10px"><button class="btn btn-primary" type="submit">Kirim Pengumuman</button></div></form></div>`:'';
+    const form = canManage?`<div class="card"><h3>Buat Pengumuman</h3><form id="annForm" novalidate><label>Judul</label><input name="judul" placeholder="Judul pengumuman" required><label>Isi</label><textarea name="isi" placeholder="Tulis isi pengumuman..." required></textarea><label>Foto (opsional, otomatis dikompres)</label><input type="file" name="foto" accept="image/jpeg,image/png,image/webp"><div style="margin-top:10px"><button class="btn btn-primary" type="submit">Kirim Pengumuman</button></div></form></div>`:'';
     const items=list.items.map(x=>`<div class="card"><b>${esc(x.judul)}</b> ${x.diarsipkan?'<span class="badge">nonaktif</span>':''}<div>${esc(x.isi)}</div>${x.foto?`<div style="margin-top:6px"><a href="${esc(pb.fileUrl(x,x.foto))}" target="_blank" rel="noopener"><img src="${esc(pb.fileUrl(x,x.foto))}" alt="foto" style="max-width:220px;border:1px solid var(--border);border-radius:8px"></a></div>`:''}<div class="muted">${esc(witaDisplay(x.dibuat_pada))}</div>${canManage?`<div class="row" style="margin-top:6px"><button class="btn" data-ann-arc="${x.id}:${x.diarsipkan?'1':'0'}">${x.diarsipkan?'Pulihkan':'Arsipkan'}</button></div>`:''}</div>`).join('');
     return `<div class="card"><h2>Pengumuman</h2></div>${form}<div>${items||'<div class="card muted">Belum ada.</div>'}</div>`;
   }
@@ -636,7 +636,7 @@
     let list={items:[]}; try{ list=await pb.collection('pesan_langsung').getList(1,50,{sort:'-dibuat_pada'});}catch(e){}
     const myId=me().id; const mine=list.items.filter(m=>m.pengirim===myId||m.penerima===myId||String(m.percakapan||'').includes(myId));
     return `<div class="card"><h2>Pesan Langsung (1-lawan-1)</h2><form id="msgForm" class="grid" novalidate><div><label>Penerima</label><select name="penerima" required><option value="">Pilih</option>${users.map(u=>`<option value="${esc(u.id)}">${esc(u.nama||u.email||u.id)}</option>`).join('')}</select></div>
-      <div style="grid-column:1/-1"><label>Isi</label><textarea name="isi" placeholder="Tulis pesan..." required></textarea></div><div style="grid-column:1/-1"><label>Foto (opsional)</label><input type="file" name="foto" accept="image/jpeg,image/png,image/webp"></div><div><button class="btn btn-primary" type="submit">Kirim Pesan</button></div></form></div>
+      <div style="grid-column:1/-1"><label>Isi</label><textarea name="isi" placeholder="Tulis pesan..." required></textarea></div><div style="grid-column:1/-1"><label>Foto (opsional, otomatis dikompres)</label><input type="file" name="foto" accept="image/jpeg,image/png,image/webp"></div><div><button class="btn btn-primary" type="submit">Kirim Pesan</button></div></form></div>
       <div class="card"><h3>Pesan Terbaru</h3>${mine.length?`<div class="table-wrap"><table><tr><th>Waktu</th><th>Dari</th><th>Ke</th><th>Isi</th><th>Foto</th></tr>${mine.map(m=>`<tr><td>${esc(witaDisplay(m.dibuat_pada))}</td><td>${esc(m.pengirim===myId?'Saya':nameOf(state.cache.users,m.pengirim,m.pengirim))}</td><td>${esc(m.penerima===myId?'Saya':nameOf(state.cache.users,m.penerima,m.penerima))}</td><td>${esc(m.isi)}</td><td>${m.foto?`<a href="${esc(pb.fileUrl(m,m.foto))}" target="_blank" rel="noopener">Lihat</a>`:''}</td></tr>`).join('')}</table></div>`:'<div class="muted">Belum ada pesan.</div>'}</div>`;
   }
 
@@ -958,7 +958,7 @@
     if(mod && mod.task){
       let cm=[]; try{ cm=(await pb.collection('komentar_tugas').getList(1,50,{filter:`modul_referensi = "${key}" && referensi_id = "${id}"`, sort:'dibuat_pada'})).items; }catch{}
       comments = `<div class="card"><h3>Komentar Tugas</h3><div>${cm.map(c=>`<div class="card"><div>${esc(c.isi)}</div>${c.foto?`<div style="margin-top:6px"><a href="${esc(pb.fileUrl(c,c.foto))}" target="_blank" rel="noopener"><img src="${esc(pb.fileUrl(c,c.foto))}" alt="foto" style="max-width:180px;border:1px solid var(--border);border-radius:8px"></a></div>`:''}<div class="muted">${esc(nameOf(state.cache.users,c.pengirim,c.pengirim))} · ${esc(witaDisplay(c.dibuat_pada))}</div></div>`).join('')||'<div class="muted">Belum ada komentar.</div>'}</div>
-        <form id="commentForm" novalidate><label>Tambah komentar</label><textarea name="isi" placeholder="Tulis komentar..." required></textarea><label>Foto (opsional)</label><input type="file" name="foto" accept="image/jpeg,image/png,image/webp"><div style="margin-top:8px"><button class="btn btn-primary" type="submit">Kirim Komentar</button></div></form></div>`;
+        <form id="commentForm" novalidate><label>Tambah komentar</label><textarea name="isi" placeholder="Tulis komentar..." required></textarea><label>Foto (opsional, otomatis dikompres)</label><input type="file" name="foto" accept="image/jpeg,image/png,image/webp"><div style="margin-top:8px"><button class="btn btn-primary" type="submit">Kirim Komentar</button></div></form></div>`;
     }
     const photoFields = ['foto_rumah','foto_perangkat','foto_sebelum','foto_sesudah','foto'];
     const photos = photoFields.filter(f=>rec[f]).map(f=>`<div style="margin:6px 0"><div class="muted">${esc(f)}</div><a href="${esc(pb.fileUrl(rec, rec[f]))}" target="_blank" rel="noopener"><img src="${esc(pb.fileUrl(rec, rec[f]))}" alt="${esc(f)}" style="max-width:220px;border:1px solid var(--border);border-radius:8px"></a></div>`).join('');
@@ -996,7 +996,7 @@
     const hint = searchable ? `<div class="muted" style="font-size:.8rem;margin-top:4px">Ketik untuk mencari perangkat (mis. SN). Pilihan yang sudah dipilih tetap tersimpan.</div>` : '';
     return `<div class="multi-select-wrap" ${searchable?'data-searchable="1"':''}><label>${esc(label)} (bisa pilih lebih dari satu)</label>${search}<select name="${esc(name)}" multiple size="6">${items.map(i=>{ const v=String(valFn(i)); return `<option value="${esc(v)}" ${sel.includes(v)?'selected':''}>${esc(labelFn(i))}</option>`; }).join('')}</select>${hint}</div>`;
   }
-  function fileInput(name,label){ return `<label>${esc(label)} (JPG/PNG/WebP, maks 2MB)</label><input name="${esc(name)}" type="file" accept="image/jpeg,image/png,image/webp">`; }
+  function fileInput(name,label){ return `<label>${esc(label)} (JPG/PNG/WebP, maks 10MB, otomatis dikompres)</label><input name="${esc(name)}" type="file" accept="image/jpeg,image/png,image/webp">`; }
   function editorForm(key,rec={}){
     const inp=(n,l,t='text',vals=null,ro=false,suggest=null)=>{
       const raw=rec[n];
@@ -1294,7 +1294,7 @@
       await withSubmitState(form,submitBtn,async()=>{
         try{
           const fd = new FormData(form);
-          const body = formBody(key, fd);
+          const body = await formBody(key, fd);
           const master = ['pelanggan','inventaris_perangkat','inventaris_non_perangkat'];
           if(master.includes(key) && !isAdmin()){
             // submit proposal with changed fields only
@@ -1324,14 +1324,14 @@
     });
     const commentForm=$('#commentForm');
     if(commentForm) attachValidation(commentForm,'komentar_tugas',true);
-    commentForm&&(commentForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'komentar_tugas',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); fd.set('modul_referensi',state.view); fd.set('referensi_id',state.detail); fd.set('pengirim',me().id); await pb.collection('komentar_tugas').create(fd); toast('Komentar terkirim'); render(); }catch(e){handleSubmitError(e,form);} }); });
+    commentForm&&(commentForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'komentar_tugas',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); fd.set('modul_referensi',state.view); fd.set('referensi_id',state.detail); fd.set('pengirim',me().id); await compressFormDataFiles(fd); await pb.collection('komentar_tugas').create(fd); toast('Komentar terkirim'); render(); }catch(e){handleSubmitError(e,form);} }); });
     const annForm=$('#annForm');
     if(annForm) attachValidation(annForm,'pengumuman',true);
-    annForm&&(annForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'pengumuman',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); fd.set('pembuat',me().id); fd.set('diarsipkan','false'); await pb.collection('pengumuman').create(fd); toast('Pengumuman berhasil dibuat'); render(); }catch(e){handleSubmitError(e,form);} }); });
+    annForm&&(annForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'pengumuman',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); fd.set('pembuat',me().id); fd.set('diarsipkan','false'); await compressFormDataFiles(fd); await pb.collection('pengumuman').create(fd); toast('Pengumuman berhasil dibuat'); render(); }catch(e){handleSubmitError(e,form);} }); });
     $$('[data-ann-arc]').forEach(b=>b.onclick=async()=>{ const [id,ar]=b.dataset.annArc.split(':'); try{ await pb.collection('pengumuman').update(id,{diarsipkan: ar!=='1'}); toast('Diperbarui'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
     const msgForm=$('#msgForm');
     if(msgForm) attachValidation(msgForm,'pesan_langsung',true);
-    msgForm&&(msgForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'pesan_langsung',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); fd.set('pengirim',me().id); const ids=[me().id,fd.get('penerima')].filter(Boolean).sort(); fd.set('percakapan',ids.join('__')); await pb.collection('pesan_langsung').create(fd); toast('Pesan terkirim'); render(); }catch(e){handleSubmitError(e,form);} }); });
+    msgForm&&(msgForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'pesan_langsung',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); fd.set('pengirim',me().id); const ids=[me().id,fd.get('penerima')].filter(Boolean).sort(); fd.set('percakapan',ids.join('__')); await compressFormDataFiles(fd); await pb.collection('pesan_langsung').create(fd); toast('Pesan terkirim'); render(); }catch(e){handleSubmitError(e,form);} }); });
     const izinForm=$('#izinForm');
     if(izinForm) attachValidation(izinForm,'absen_izin',true);
     izinForm&&(izinForm.onsubmit=async(ev)=>{ ev.preventDefault(); const form=ev.target; if(!validateAndShow(form,'absen_izin',true)) return; const submitBtn=form.querySelector('button[type="submit"]'); await withSubmitState(form,submitBtn,async()=>{ try{ const fd=new FormData(form); await pb.collection('absen_hadir').create({teknisi:me().id, tanggal:new Date().toISOString().slice(0,10), keterangan:fd.get('keterangan'), alasan:fd.get('alasan'), metode:'Mandiri', dicatat_oleh:me().id, jam_masuk:new Date().toISOString()}); toast('Izin/Sakit berhasil dicatat'); }catch(e){handleSubmitError(e,form);} }); });
@@ -1494,7 +1494,7 @@
     initSearchableMultiSelect(form);
     attachValidation(form,key,true);
     const submitBtn=form ? form.querySelector('button[type="submit"]') : null;
-    form.onsubmit=async(ev)=>{ ev.preventDefault(); const f=ev.target; if(!validateAndShow(f,key,true)) return; await withSubmitState(f,submitBtn,async()=>{ try{ const fd=new FormData(f); await pb.collection(key).create(formBody(key,fd,true)); toast('Data berhasil ditambahkan'); state.cache={}; render(); }catch(e){handleSubmitError(e,f);} }); };
+    form.onsubmit=async(ev)=>{ ev.preventDefault(); const f=ev.target; if(!validateAndShow(f,key,true)) return; await withSubmitState(f,submitBtn,async()=>{ try{ const fd=new FormData(f); await pb.collection(key).create(await formBody(key,fd,true)); toast('Data berhasil ditambahkan'); state.cache={}; render(); }catch(e){handleSubmitError(e,f);} }); };
   }
 
   function errorText(e){
@@ -1502,8 +1502,104 @@
     if(list.length) return [...new Set(list.map(x=>x.msg))].join('; ');
     return (e && e.message) || (e && String(e)) || 'Gagal';
   }
-  function formBody(key, fd, isNew=false){
-    let hasFile=false; for(const [k,v] of fd.entries()){ if(v instanceof File && v.size>0){ hasFile=true; if(v.size>2*1024*1024) throw new Error('Ukuran foto maksimal 2MB'); } }
+
+  async function compressImageFile(file, opts={}){
+    const maxW = opts.maxW || 1600;
+    const maxH = opts.maxH || 1600;
+    const maxBytes = opts.maxBytes || (2 * 1024 * 1024);
+    const qualityStart = opts.quality || 0.82;
+    if(!file || !(file instanceof File) || !/^image\/(jpeg|png|webp)$/i.test(file.type||'')) return file;
+    // Skip tiny files already within reasonable bounds? Still try to resize large dimensions.
+    const loadBitmap = async ()=>{
+      if(window.createImageBitmap){
+        try{ return await createImageBitmap(file); }catch(e){}
+      }
+      const url = URL.createObjectURL(file);
+      try{
+        const img = await new Promise((resolve,reject)=>{ const i=new Image(); i.onload=()=>resolve(i); i.onerror=reject; i.src=url; });
+        return img;
+      } finally { try{ URL.revokeObjectURL(url); }catch(e){} }
+    };
+
+    const bmp = await loadBitmap();
+    const srcW = bmp.width || bmp.naturalWidth || 0;
+    const srcH = bmp.height || bmp.naturalHeight || 0;
+    if(!srcW || !srcH){ if(bmp.close) try{bmp.close()}catch(e){}; return file; }
+
+    const ratio = Math.min(1, maxW / srcW, maxH / srcH);
+    const dstW = Math.max(1, Math.round(srcW * ratio));
+    const dstH = Math.max(1, Math.round(srcH * ratio));
+
+    // If already small enough and not oversized, keep original
+    if(ratio === 1 && file.size <= maxBytes) { if(bmp.close) try{bmp.close()}catch(e){}; return file; }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = dstW; canvas.height = dstH;
+    const ctx = canvas.getContext('2d');
+    if(!ctx){ if(bmp.close) try{bmp.close()}catch(e){}; return file; }
+    ctx.drawImage(bmp, 0, 0, dstW, dstH);
+    if(bmp.close) try{bmp.close()}catch(e){}
+
+    // Prefer JPEG for photos to save size; keep WebP as WebP; PNG -> JPEG unless transparency likely not needed? Photos: JPEG is fine.
+    let outType = 'image/jpeg';
+    if(/image\/webp/i.test(file.type)) outType = 'image/webp';
+    // For PNG, use JPEG too (most uploads are photos) to get compression; but if very small keep as png
+    if(/image\/png/i.test(file.type)) outType = 'image/jpeg';
+
+    const toBlob = (type, quality)=> new Promise(resolve=> canvas.toBlob(resolve, type, quality));
+    let quality = qualityStart;
+    let blob = await toBlob(outType, quality);
+    // try reducing quality/size until under maxBytes (a few attempts)
+    let tries = 0;
+    while(blob && blob.size > maxBytes && tries < 6){
+      tries++;
+      if(quality > 0.45){ quality = Math.max(0.45, quality - 0.12); }
+      else {
+        // shrink dimensions further
+        const scale = 0.85;
+        const nw = Math.max(1, Math.round(canvas.width * scale));
+        const nh = Math.max(1, Math.round(canvas.height * scale));
+        if(nw === canvas.width && nh === canvas.height) break;
+        const c2 = document.createElement('canvas'); c2.width=nw; c2.height=nh;
+        const c2ctx=c2.getContext('2d'); if(!c2ctx) break;
+        c2ctx.drawImage(canvas,0,0,nw,nh);
+        canvas.width=nw; canvas.height=nh;
+        ctx.clearRect(0,0,nw,nh);
+        ctx.drawImage(c2,0,0);
+      }
+      blob = await toBlob(outType, quality);
+    }
+    if(!blob) return file;
+    // if compression made it bigger somehow (rare for small PNG->JPEG cases), keep original when original is ok
+    if(blob.size >= file.size && file.size <= maxBytes && ratio === 1) return file;
+
+    const ext = outType === 'image/webp' ? 'webp' : 'jpg';
+    const baseName = String(file.name||'foto').replace(/\.[^.]+$/, '') || 'foto';
+    const newName = `${baseName}.${ext}`;
+    return new File([blob], newName, { type: outType, lastModified: Date.now() });
+  }
+
+  async function compressFormDataFiles(fd){
+    if(!fd || typeof fd.entries !== 'function') return fd;
+    const entries = Array.from(fd.entries());
+    for(const [k,v] of entries){
+      if(v instanceof File && v.size > 0 && /^image\/(jpeg|png|webp)$/i.test(v.type||'')){
+        const compressed = await compressImageFile(v);
+        if(compressed !== v){
+          // replace: FormData has no direct replace for single among multiples; use set for this simple case
+          // but there can be multiple values for same key? photo fields are single file inputs.
+          fd.set(k, compressed, compressed.name);
+        } else if(compressed.size > 2*1024*1024){
+          throw new Error(`Ukuran foto "${v.name}" masih terlalu besar setelah kompresi. Coba foto lain.`);
+        }
+      }
+    }
+    return fd;
+  }
+
+  async function formBody(key, fd, isNew=false){
+    await compressFormDataFiles(fd);
+    let hasFile=false; for(const [k,v] of fd.entries()){ if(v instanceof File && v.size>0){ hasFile=true; if(v.size>2*1024*1024) throw new Error('Ukuran foto maksimal 2MB setelah kompresi'); } }
     const body = hasFile ? fd : {};
     const set=(k,v)=>{ if(hasFile) body.set(k,v); else body[k]=v; };
     const multiKeys = ['perangkat'];
