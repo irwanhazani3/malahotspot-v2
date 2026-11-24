@@ -96,9 +96,12 @@ function simulate(views, nama) {
     const before = stok;
     stok += deltaOfValues(v.jenis, v.jumlah, v.arah, v.keterangan);
     if (stok < 0) {
+      const tgl = String(v.tanggal || '').slice(0, 10);
+      const tglInfo = tgl ? (' tanggal ' + tgl) : '';
+      const idInfo = (v.id && v.id !== '__baru__' && v.id !== '__rencana__') ? (' [id:' + v.id + ']') : '';
       throw new BadRequestError(
         'Stok ' + (nama || 'barang') + ' akan negatif pada mutasi ' +
-        (v.jenis || '-') + ' ' + v.jumlah + '. Periksa tanggal dan riwayat mutasi.'
+        (v.jenis || '-') + ' ' + v.jumlah + tglInfo + idInfo + '. Periksa tanggal dan riwayat mutasi.'
       );
     }
     pairs[v.id] = { before: before, after: stok };

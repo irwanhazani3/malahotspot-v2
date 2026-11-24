@@ -41,19 +41,38 @@ onRecordAfterUpdateSuccess((e) => {
       let ov = null, nv = null;
       try { ov = JSON.parse(JSON.stringify(e.record.original())); } catch (_) {}
       try { nv = JSON.parse(JSON.stringify(e.record)); } catch (_) { nv = {}; }
+
+      // Lewati noise riwayat: update otomatis sistem yang hanya menandai
+      // material_tercatat=false->true pada tugas (tanpa perubahan bisnis lain).
+      let skipAutoMaterial = false;
       try {
-        const hcol = e.app.findCollectionByNameOrId('riwayat');
-        const r = new Record(hcol);
-        r.set('waktu', new Date().toISOString());
-        r.set('aktor', e.auth ? e.auth.id : '');
-        r.set('aksi', aksi);
-        r.set('modul', col);
-        r.set('record_id', e.record.id || '');
-        r.set('nilai_lama', ov);
-        r.set('nilai_baru', nv);
-        r.set('catatan', '');
-        e.app.save(r);
-      } catch (err) { console.log('[riwayat] gagal update', col, String(err)); }
+        if ((col === 'pemasangan' || col === 'perbaikan') && ov && nv) {
+          const oldMat = !!ov.material_tercatat;
+          const newMat = !!nv.material_tercatat;
+          if (!oldMat && newMat) {
+            const ignore = { material_tercatat: true, diubah_pada: true, updated: true };
+            const keys = Array.from(new Set(Object.keys(ov).concat(Object.keys(nv))));
+            const changed = keys.filter(k => !ignore[k] && JSON.stringify(ov[k]) !== JSON.stringify(nv[k]));
+            if (changed.length === 0) skipAutoMaterial = true;
+          }
+        }
+      } catch (_) {}
+
+      if (!skipAutoMaterial) {
+        try {
+          const hcol = e.app.findCollectionByNameOrId('riwayat');
+          const r = new Record(hcol);
+          r.set('waktu', new Date().toISOString());
+          r.set('aktor', e.auth ? e.auth.id : '');
+          r.set('aksi', aksi);
+          r.set('modul', col);
+          r.set('record_id', e.record.id || '');
+          r.set('nilai_lama', ov);
+          r.set('nilai_baru', nv);
+          r.set('catatan', '');
+          e.app.save(r);
+        } catch (err) { console.log('[riwayat] gagal update', col, String(err)); }
+      }
     } catch (err) { console.log('[hook update]', String(err)); }
   }
   e.next();

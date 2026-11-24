@@ -22,3 +22,6 @@ pocketbase.zip
 # editors
 .vscode/
 .idea/
+
+# local tunnel binary
+cloudflared
