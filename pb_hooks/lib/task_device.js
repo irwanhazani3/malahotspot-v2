@@ -56,17 +56,17 @@ function syncDevices(e, fromCreate){
   if(e.record.getBool('diarsipkan')) return;
   const oldStatus = fromCreate ? '' : e.record.original().getString('status');
   const newStatus = e.record.getString('status');
-  const oldDev = fromCreate ? '' : String(e.record.original().get('perangkat') || '');
-  const newDev = String(e.record.get('perangkat') || '');
-  if(newStatus !== 'Selesai' || (!fromCreate && oldStatus === 'Selesai' && oldDev === newDev)) return;
-
-  const list = selectedDevices(e.record);
-  if(!list.length) return;
+  const oldDev = fromCreate ? [] : selectedDevices(e.record.original());
+  const newDev = selectedDevices(e.record);
+  const oldDevStr = fromCreate ? '' : String(e.record.original().get('perangkat') || '');
+  const newDevStr = String(e.record.get('perangkat') || '');
+  if(newStatus !== 'Selesai' || (!fromCreate && oldStatus === 'Selesai' && oldDevStr === newDevStr)) return;
 
   const lokasi = targetLocation(e.app, e.record);
   const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
 
-  for(const id of list){
+  // Set perangkat BARU ke kondisi Terpasang
+  for(const id of newDev){
     try{
       const dev = e.app.findRecordById('inventaris_perangkat', id);
       if(dev.getBool('diarsipkan')) continue;
@@ -78,7 +78,27 @@ function syncDevices(e, fromCreate){
         t: now,
         id: id,
       }).execute();
-    }catch(err){ console.log('[task device sync]', col, String(err)); }
+    }catch(err){ console.log('[task device sync terpasang]', col, String(err)); }
+  }
+
+  // Set perangkat LAMA yang dilepas (tidak ada di list baru) ke kondisi Cabutan
+  const newSet = new Set(newDev.map(String));
+  for(const id of oldDev){
+    if(newSet.has(String(id))) continue; // masih dipakai, skip
+    try{
+      const dev = e.app.findRecordById('inventaris_perangkat', id);
+      if(dev.getBool('diarsipkan')) continue;
+      // Hanya ubah jika sebelumnya Terpasang — jangan overwrite kondisi manual lain
+      if(dev.getString('kondisi') !== 'Terpasang') continue;
+      e.app.db().newQuery(
+        "UPDATE inventaris_perangkat SET kondisi = {:k}, diubah_pada = {:t} WHERE id = {:id}"
+      ).bind({
+        k: 'Cabutan',
+        t: now,
+        id: id,
+      }).execute();
+      console.log('[task device sync cabutan]', col, id);
+    }catch(err){ console.log('[task device sync cabutan]', col, String(err)); }
   }
 }
 

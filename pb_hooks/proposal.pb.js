@@ -24,8 +24,8 @@ routerAdd('POST', '/api/usulan/:id/decide', (e) => {
     const action = body.action; // setujui, tolak, ubah_setujui, tarik
     const rec = e.app.findRecordById('usulan_perubahan', id);
     const status = rec.getString('status');
-    if(status !== 'Menunggu' && !(action==='tarik' && status==='Menunggu')) {
-      // allow admin decide only when pending except special cases
+    if(status !== 'Menunggu') {
+      return e.json(400, {message: 'Usulan sudah diputuskan (status: ' + status + '). Tidak dapat diubah lagi.'});
     }
     if(action === 'tolak'){
       const alasan = String(body.alasan_tolak||'').trim(); if(!alasan) return e.json(400,{message:'Alasan tolak wajib'});

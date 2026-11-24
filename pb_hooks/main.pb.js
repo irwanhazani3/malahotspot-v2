@@ -113,7 +113,8 @@ onRecordCreateRequest((e) => {
       }
     }
     if (e.collection && e.collection.name === 'inventaris_perangkat') {
-      const { validateDeviceSN } = require(__hooks + '/lib/inventory.js');
+      const { validateDeviceSN, composeDeviceInvNumber } = require(__hooks + '/lib/inventory.js');
+      composeDeviceInvNumber(e.record);
       validateDeviceSN(e.app, e.record);
     }
     if (e.collection && e.collection.name === 'inventaris_non_perangkat') {
@@ -140,6 +141,18 @@ onRecordAfterCreateSuccess((e) => {
       const barangId = e.record.getString('barang');
       const { recomputeStock } = require(__hooks + '/lib/mutasi.js');
       recomputeStock(e.app, barangId);
+    }
+    if (e.record.collection().name === 'perbaikan') {
+      const gid = e.record.getString('gangguan');
+      if (gid) {
+        try {
+          const g = e.app.findRecordById('layanan_gangguan', gid);
+          if (String(g.getString('status')||'') === 'Baru') {
+            g.set('status', 'Ditindaklanjuti');
+            e.app.save(g);
+          }
+        } catch (e2) { console.log('[gangguan->ditindaklanjuti]', String(e2)); }
+      }
     }
   } catch (err) {
     console.log('[mutasi after create]', String(err));
@@ -170,7 +183,8 @@ onRecordUpdateRequest((e) => {
       validateStockItemName(e.app, e.record);
     }
     if (e.collection && e.collection.name === 'inventaris_perangkat') {
-      const { validateDeviceSN } = require(__hooks + '/lib/inventory.js');
+      const { validateDeviceSN, composeDeviceInvNumber } = require(__hooks + '/lib/inventory.js');
+      composeDeviceInvNumber(e.record);
       validateDeviceSN(e.app, e.record);
     }
   } catch (err) {
@@ -185,7 +199,7 @@ onRecordAfterUpdateSuccess((e) => {
   try {
     const col = e.record.collection().name;
     const auth = e.auth;
-    const progressed = { layanan_gangguan: ['Diproses', 'Selesai'], pemasangan: ['Dikerjakan', 'Selesai'], perbaikan: ['Diproses', 'Selesai'] };
+    const progressed = { layanan_gangguan: ['Ditindaklanjuti'], pemasangan: ['Dikerjakan', 'Selesai'], perbaikan: ['Diproses', 'Selesai'] };
     if (auth && progressed[col]) {
       const oldS = e.record.original().getString('status');
       const newS = e.record.getString('status');
@@ -208,8 +222,62 @@ onRecordAfterUpdateSuccess((e) => {
         }
       }
     }
+    if (col === 'perbaikan') {
+      const gid = e.record.getString('gangguan');
+      if (gid) {
+        try {
+          const g = e.app.findRecordById('layanan_gangguan', gid);
+          if (String(g.getString('status')||'') === 'Baru') {
+            g.set('status', 'Ditindaklanjuti');
+            e.app.save(g);
+          }
+        } catch (e2) { console.log('[gangguan->ditindaklanjuti]', String(e2)); }
+      }
+    }
   } catch (err) { console.log('[auto absen]', String(err)); }
   e.next();
+});
+
+routerAdd('POST', '/api/perangkat/:id/cabut', (e) => {
+  try {
+    const auth = e.auth;
+    if (!auth) return e.json(401, { message: 'Autentikasi diperlukan' });
+    const role = String(auth.getString('role') || '');
+    if (!['admin', 'teknisi'].includes(role)) return e.json(403, { message: 'Tidak diizinkan' });
+
+    const id = e.request.pathValue('id');
+    const dev = e.app.findRecordById('inventaris_perangkat', id);
+    const now = new Date().toISOString();
+    const w = new Date(Date.now() + 8 * 3600000);
+    const pad = n => String(n).padStart(2, '0');
+    const tanggal = `${w.getUTCFullYear()}-${pad(w.getUTCMonth()+1)}-${pad(w.getUTCDate())} 00:00:00`;
+
+    // Update perangkat
+    dev.set('kondisi', 'Cabutan');
+    dev.set('lokasi_pemegang', 'Kantor');
+    dev.set('diubah_pada', now);
+    e.app.save(dev);
+
+    // Tutup riwayat pemasangan aktif untuk perangkat ini
+    try {
+      const active = e.app.findRecordsByFilter('riwayat_pemasangan_perangkat', 'perangkat = {:did} && status = "Aktif"', '', 50, 0, { did: id });
+      for (const h of (active || [])) {
+        h.set('status', 'Dicabut');
+        h.set('tanggal_dilepas', tanggal);
+        const ket = String(h.getString('keterangan') || '');
+        const note = 'Dicabut manual ' + tanggal.slice(0, 10);
+        h.set('keterangan', ket ? (ket + ' | ' + note) : note);
+        e.app.save(h);
+      }
+    } catch (err) {
+      console.log('[cabut] riwayat', String(err));
+    }
+
+    return e.json(200, { ok: true, id, kondisi: 'Cabutan' });
+  } catch (err) {
+    console.log('[cabut]', String(err));
+    return e.json(400, { message: err && err.message ? err.message : 'Gagal mencabut perangkat' });
+  }
 });
 
 routerAdd('GET', '/api/app/ping', (e) => e.json(200, { ok: true, time: new Date().toISOString() }));

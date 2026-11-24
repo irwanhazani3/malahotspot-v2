@@ -57,4 +57,30 @@ function validateOpeningStock(rec) {
   rec.set('stok', 0);
 }
 
-module.exports = { validateDeviceSN, validateStockItemName, validateStockItem, validateOpeningStock };
+function composeDeviceInvNumber(rec) {
+  // Format: INV.ST {BULAN}/{TAHUN}/{NO_SERI} (bulan & tahun otomatis WITA, no seri manual)
+  let noSeri = '';
+  let noInv = '';
+  try { noSeri = String(rec.getString('no_seri_inv') || '').trim(); } catch (_) {}
+  try { noInv = String(rec.getString('no_inv') || '').trim(); } catch (_) {}
+  rec.set('no_seri_inv', noSeri);
+  if (!noSeri) {
+    // jika user mengosongkan seri manual, kosongkan no_inv juga
+    if (!noInv || /^INV\.?\s*ST\b/i.test(noInv)) rec.set('no_inv', '');
+    return;
+  }
+  // Gunakan bulan/tahun dari no_inv yang sudah ada bila valid, agar tidak berubah saat edit.
+  let month = '';
+  let year = '';
+  const m = noInv.match(/INV\.?\s*ST\s*(\d{1,2})\s*\/\s*(\d{4})\s*\/\s*(.+)$/i);
+  if (m) { month = String(m[1]).padStart(1, '0'); year = m[2]; }
+  if (!month || !year) {
+    const now = new Date(Date.now() + 8 * 3600000); // WITA
+    month = String(now.getUTCMonth() + 1);
+    year = String(now.getUTCFullYear());
+  }
+  const composed = `INV.ST ${month}/${year}/${noSeri}`;
+  rec.set('no_inv', composed);
+}
+
+module.exports = { validateDeviceSN, validateStockItemName, validateStockItem, validateOpeningStock, composeDeviceInvNumber };

@@ -23,6 +23,7 @@
   }
   function me(){ return pb.authStore.model; }
   function isAdmin(){ return me() && me().role==='admin'; }
+  function isTeknisi(){ return me() && me().role==='teknisi'; }
   async function ensureAuth(){ if(!pb.isValid) return false; try{ await pb.authRefresh(); return true; }catch{ pb.clear(); return false; } }
   async function loadCache(){
     try{
@@ -304,7 +305,7 @@
     {key:'perbaikan', label:'Perbaikan', cols:['pelanggan','tanggal','status','teknisi','tindakan'], task:true},
     {key:'pemasangan', label:'Pemasangan', cols:['pelanggan','tanggal','status','ditugaskan_ke'], task:true},
     {key:'absen_hadir', label:'Absen', cols:['teknisi','tanggal','jam_masuk','keterangan','metode']},
-    {key:'inventaris_perangkat', label:'Inv. Perangkat', cols:['nama','tipe','sn_serial','kondisi','lokasi_pemegang']},
+    {key:'inventaris_perangkat', label:'Inv. Perangkat', cols:['no_inv','nama','tipe','sn_serial','kondisi','lokasi_pemegang']},
     {key:'inventaris_non_perangkat', label:'Inv. Non Perangkat', cols:['nama_barang','satuan','stok','stok_minimum']},
     {key:'mutasi_inventaris', label:'Mutasi Inventaris', cols:['barang','jenis','jumlah','stok_sesudah','tanggal','keterangan']},
     {key:'usulan_perubahan', label:'Usulan', cols:['modul','record_id','status','pemohon']},
@@ -727,6 +728,10 @@
     let filter = '';
     if(key === 'users'){ filter = aktif ? 'aktif = true' : 'aktif = false'; }
     else if(!noArchive) { filter = aktif?'diarsipkan = false':'diarsipkan = true'; }
+    if(key === 'inventaris_perangkat' && state.kondisiFilter){
+      const kf = String(state.kondisiFilter).replace(/"/g,'');
+      filter += (filter ? ' && ' : '') + `kondisi = "${kf}"`;
+    }
     if(state.search){
       const sv=state.search.replace(/"/g,'');
       const smap = {
@@ -736,7 +741,7 @@
         perbaikan:['id','tindakan','status','pelanggan.nama','teknisi.nama'],
         pemasangan:['id','status','pelanggan.nama','ditugaskan_ke.nama'],
         absen_hadir:['id','keterangan','metode','alasan','teknisi.nama'],
-        inventaris_perangkat:['id','nama','tipe','sn_serial','kondisi','lokasi_pemegang'],
+        inventaris_perangkat:['id','no_inv','no_seri_inv','nama','tipe','sn_serial','kondisi','lokasi_pemegang'],
         inventaris_non_perangkat:['id','nama_barang','keterangan','satuan'],
         mutasi_inventaris:['id','jenis','keterangan','referensi_id','referensi_modul','barang.nama_barang'],
         usulan_perubahan:['id','modul','record_id','status','alasan_tolak','pemohon.nama'],
@@ -759,6 +764,8 @@
     })();
     let list={items:[],page:1,totalPages:1,totalItems:0}; try{ list=await pb.collection(key).getList(state.page||1,50,{filter, sort, ...(expand?{expand}:{})});}catch(e){ return `<div class="card"><h2>${esc(mod.label)}</h2><div class="error">${esc(e.message)}</div></div>`; }
     const cols=mod.cols; const rows=list.items.map(it=>`<tr>${cols.map(c=>`<td>${cell(key,c,it)}</td>`).join('')}<td><button class="btn" data-open="${key}:${it.id}">Buka</button></td></tr>`).join('');
+    let viewLabel = key==='users' ? (aktif?'Akun aktif':'Akun nonaktif') : (noArchive ? 'Semua data' : (aktif?'Data aktif':'Data nonaktif'));
+    if(key==='inventaris_perangkat' && state.kondisiFilter) viewLabel += ` · ${state.kondisiFilter}`;
     let extraTop = '';
     if(key==='pengaturan'){
       extraTop = `<div class="card"><h3 style="margin-top:0">Panduan Pengaturan Sistem</h3>
@@ -788,9 +795,11 @@
         </div>
       </div></div>`;
     }
-    if(key==='inventaris_perangkat' && aktif){
+    if(key==='inventaris_perangkat'){
       try{
-        const all = await pb.collection('inventaris_perangkat').getList(1,500,{filter:'diarsipkan = false'});
+        // Gunakan filter yang sama dengan tabel agar rekap mengikuti pencarian,
+        // toggle aktif/nonaktif, dan pilihan kondisi.
+        const all = await pb.collection('inventaris_perangkat').getList(1,500,{filter});
         const map = {};
         for(const it of (all.items||[])){
           const nm=it.nama||'-', tp=it.tipe||'-', kd=it.kondisi||'-';
@@ -808,12 +817,41 @@
         else if(sortKey==='jumlah_asc') recaps.sort((a,b)=>(a.jumlah-b.jumlah)||cmpStr(a.nama,b.nama)||cmpStr(a.tipe,b.tipe));
         const opts = [['nama','Nama'],['tipe','Tipe'],['kondisi','Kondisi'],['jumlah_desc','Jumlah (terbanyak)'],['jumlah_asc','Jumlah (tersedikit)']];
         const sortSel = `<label style="margin:0">Urutkan menurut</label><select id="rekapSort" style="max-width:220px">${opts.map(([v,l])=>`<option value="${v}" ${sortKey===v?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
-        extraTop = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div><h3 style="margin:0">Rekap Unit (Data aktif)</h3><p class="muted" style="margin:4px 0 0">Jumlah dihitung otomatis dari unit (bukan input manual).</p></div><div class="row" style="gap:6px;align-items:center">${sortSel}</div></div>${recaps.length?`<div class="table-wrap"><table><thead><tr><th>Nama</th><th>Tipe</th><th>Kondisi</th><th>Jumlah</th></tr></thead><tbody>${recaps.map(r=>`<tr><td>${esc(r.nama)}</td><td>${esc(r.tipe)}</td><td>${esc(r.kondisi)}</td><td><b>${r.jumlah}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Belum ada data.</div>'}</div>`;
+        extraTop = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div><h3 style="margin:0">Rekap Unit (${esc(viewLabel)})</h3><p class="muted" style="margin:4px 0 0">Jumlah dihitung otomatis dari unit yang tampil di tabel (bukan input manual).</p></div><div class="row" style="gap:6px;align-items:center">${sortSel}</div></div>${recaps.length?`<div class="table-wrap"><table><thead><tr><th>Nama</th><th>Tipe</th><th>Kondisi</th><th>Jumlah</th></tr></thead><tbody>${recaps.map(r=>`<tr><td>${esc(r.nama)}</td><td>${esc(r.tipe)}</td><td>${esc(r.kondisi)}</td><td><b>${r.jumlah}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Belum ada data.</div>'}</div>`;
       }catch(e){ extraTop = `<div class="card"><div class="error">Gagal memuat rekap: ${esc(e.message)}</div></div>`; }
     }
-    const viewLabel = key==='users' ? (aktif?'Akun aktif':'Akun nonaktif') : (noArchive ? 'Semua data' : (aktif?'Data aktif':'Data nonaktif'));
+    if(key==='mutasi_inventaris' && aktif){
+      try{
+        const [muts, barangs] = await Promise.all([
+          pb.collection('mutasi_inventaris').getList(1,500,{filter:'diarsipkan = false', sort:'-tanggal,-dibuat_pada', expand:'barang'}),
+          pb.collection('inventaris_non_perangkat').getList(1,500,{filter:'diarsipkan = false', sort:'nama_barang'})
+        ]);
+        const byBarang = {};
+        for(const b of (barangs.items||[])){
+          byBarang[b.id] = { id:b.id, nama:b.nama_barang||'-', satuan:b.satuan||'', stok:Number(b.stok||0), masuk:0, keluar:0, penyesuaian:0 };
+        }
+        for(const m of (muts.items||[])){
+          const bid = m.barang;
+          if(!bid) continue;
+          if(!byBarang[bid]) byBarang[bid] = { id:bid, nama:(m.expand&&m.expand.barang&&m.expand.barang.nama_barang)||bid, satuan:(m.expand&&m.expand.barang&&m.expand.barang.satuan)||'', stok:0, masuk:0, keluar:0, penyesuaian:0 };
+          const j = Number(m.jumlah||0);
+          if(m.jenis==='Pengadaan') byBarang[bid].masuk += j;
+          else if(m.jenis==='Pemakaian') byBarang[bid].keluar += j;
+          else if(m.jenis==='Penyesuaian'){
+            const arah = String(m.arah_penyesuaian||'');
+            if(arah==='Kurang') byBarang[bid].penyesuaian -= j;
+            else byBarang[bid].penyesuaian += j;
+          }
+        }
+        const rowsR = Object.values(byBarang).sort((a,b)=>String(a.nama).localeCompare(String(b.nama),'id'));
+        const totalMasuk = rowsR.reduce((s,r)=>s+r.masuk,0);
+        const totalKeluar = rowsR.reduce((s,r)=>s+r.keluar,0);
+        extraTop += `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div><h3 style="margin:0">Ringkasan Masuk / Keluar / Stok</h3><p class="muted" style="margin:4px 0 0">Total dari mutasi aktif. Stok saat ini mengikuti data barang.</p></div><div class="muted">Masuk: <b>${totalMasuk}</b> · Keluar: <b>${totalKeluar}</b></div></div>${rowsR.length?`<div class="table-wrap"><table><thead><tr><th>Barang</th><th>Masuk</th><th>Keluar</th><th>Penyesuaian</th><th>Stok Saat Ini</th></tr></thead><tbody>${rowsR.map(r=>`<tr><td>${esc(r.nama)}${r.satuan?` <span class="muted">(${esc(r.satuan)})</span>`:''}</td><td>${r.masuk}</td><td>${r.keluar}</td><td>${r.penyesuaian>0?'+':''}${r.penyesuaian}</td><td><b>${r.stok}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Belum ada data.</div>'}</div>`;
+      }catch(e){ extraTop += `<div class="card"><div class="error">Gagal memuat ringkasan: ${esc(e.message)}</div></div>`; }
+    }
     const aktifToggle = noArchive ? '' : `<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="aktifOnly" ${aktif?'checked':''}> ${key==='users'?'Aktif':'Data aktif'}</label>`;
-    return `${extraTop}<div class="card"><div class="toolbar"><h2>${esc(mod.label)} <span class="badge">${esc(viewLabel)}</span></h2><div class="row"><input id="searchBox" placeholder="Cari data..." value="${esc(state.search||'')}">${aktifToggle}<button class="btn btn-ghost" id="btnSearch">Cari</button>${canCreate(key)?`<button class="btn btn-primary" id="btnNew" data-new="${key}">+ Tambah</button>`:''}</div></div>
+    const kondisiSelect = key==='inventaris_perangkat' ? `<select id="kondisiFilter" style="max-width:170px"><option value="">Semua kondisi</option>${['Baik','Terpasang','Rusak','Nonaktif','Cabutan'].map(k=>`<option value="${k}" ${state.kondisiFilter===k?'selected':''}>${k}</option>`).join('')}</select>` : '';
+    return `${extraTop}<div class="card"><div class="toolbar"><h2>${esc(mod.label)} <span class="badge">${esc(viewLabel)}</span></h2><div class="row"><input id="searchBox" placeholder="Cari data..." value="${esc(state.search||'')}">${kondisiSelect}${aktifToggle}<button class="btn btn-ghost" id="btnSearch">Cari</button>${canCreate(key)?`<button class="btn btn-primary" id="btnNew" data-new="${key}">+ Tambah</button>`:''}</div></div>
       <div class="table-wrap" style="overflow:auto"><table><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}<th>Aksi</th></tr></thead><tbody>${rows||'<tr><td colspan="99" class="muted">Tidak ada data.</td></tr>'}</tbody></table></div>
       <div class="row" style="margin-top:8px"><span class="muted">Hal ${list.page}/${list.totalPages} (${list.totalItems})</span><button class="btn" id="prevPage" ${list.page<=1?'disabled':''}>Prev</button><button class="btn" id="nextPage" ${list.page>=list.totalPages?'disabled':''}>Next</button></div></div>`;
   }
@@ -833,6 +871,21 @@
     if(key==='usulan_perubahan'){
       const st=rec.status; const mine = rec.pemohon===me().id;
       extra = `<div class="card" style="margin-top:8px"><h3>Aksi Usulan</h3>${isAdmin() && st==='Menunggu'?`<label>Nilai usulan (JSON, untuk "Ubah lalu setujui")</label><textarea id="uNilai" rows="4">${esc(typeof rec.nilai_usulan==='string'?rec.nilai_usulan:JSON.stringify(rec.nilai_usulan||{},null,2))}</textarea><div class="row" style="margin-top:8px"><button class="btn" id="uApprove">Setujui</button><button class="btn" id="uApproveEdit">Ubah lalu Setujui</button><button class="btn" id="uReject">Tolak</button></div>`:''}${mine && st==='Menunggu'?`<div class="row" style="margin-top:8px"><button class="btn" id="uWithdraw">Tarik Usulan Saya</button></div>`:''}<div id="uMsg" class="muted"></div></div>`;
+    }
+    if(key==='layanan_gangguan' && rec && rec.id){
+      extra += `<div class="card" style="margin-top:8px"><h3>Tindak Lanjut</h3><p class="muted" style="margin-top:-2px">Gangguan ini adalah pencatatan/notice. Buat Perbaikan untuk menindaklanjuti.</p><div class="row"><button class="btn btn-primary" id="buatPerbaikanDariGangguan">Buat Perbaikan</button></div></div>`;
+    }
+    if((key==='pemasangan' || key==='perbaikan') && rec && rec.id && (isAdmin() || isTeknisi())){
+      await loadCache();
+      const devIds = Array.isArray(rec.perangkat) ? rec.perangkat : (rec.perangkat ? [rec.perangkat] : []);
+      if(devIds.length){
+        const rows = devIds.map(did=>{
+          const d = (state.cache.perangkat||[]).find(x=>String(x.id)===String(did)) || {};
+          const label = `${d.nama||'Perangkat'}${d.sn_serial?(' · SN '+d.sn_serial):''}${d.kondisi?(' · '+d.kondisi):''}`;
+          return `<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)"><span>${esc(label)}</span><button class="btn btn-ghost" data-cabut="${esc(did)}">Cabut</button></div>`;
+        }).join('');
+        extra += `<div class="card" style="margin-top:8px"><h3>Perangkat Terkait</h3><p class="muted" style="margin-top:-2px">Cabut perangkat jika sudah dilepas dari pelanggan.</p>${rows}</div>`;
+      }
     }
     if(key==='pemasangan' && !isAdmin() && rec && rec.id){
       const pelOpts = (state.cache.pelanggan||[]).filter(p=>!p.diarsipkan).map(p=>`<option value="${esc(p.id)}" ${String(rec.pelanggan||'')===String(p.id)?'selected':''}>${esc(p.nama||p.id)}</option>`).join('');
@@ -888,6 +941,7 @@
               <div style="flex:1;min-width:220px"><div class="muted" style="font-size:.85rem">Perangkat Saat Ini (Aktif)</div><div>${curTxt}</div></div>
             </div></div>`;
 
+          const canCabut = isAdmin() || isTeknisi();
           const rows = histItems.map((it,idx)=>{
             const srcCol = it.pemasangan ? 'pemasangan' : (it.perbaikan ? 'perbaikan' : '');
             const srcId = it.pemasangan || it.perbaikan || '';
@@ -895,9 +949,12 @@
             const dilepas = it.tanggal_dilepas ? esc(witaDisplay(it.tanggal_dilepas)) : '<span class="muted">-</span>';
             const jenisBadge = String(it.jenis)==='Pemasangan Pertama' ? '<span class="badge">Pemasangan Pertama</span>' : `<span class="badge">${esc(it.jenis||'Penggantian')}</span>`;
             const statusBadge = String(it.status)==='Aktif' ? '<span class="badge ok">Aktif</span>' : `<span class="badge">${esc(it.status||'-')}</span>`;
-            return `<tr><td>${idx+1}</td><td>${esc(witaDisplay(it.tanggal_pasang))}</td><td>${dilepas}</td><td>${jenisBadge}</td><td>${statusBadge}</td><td>${esc(devName(it))}</td><td>${srcBtn}</td></tr>`;
+            const dev = (it.expand && it.expand.perangkat) ? it.expand.perangkat : (state.cache.perangkat||[]).find(x=>String(x.id)===String(it.perangkat));
+            const cabutBtn = canCabut && String(it.status)==='Aktif' && it.perangkat && String(dev.kondisi||'')!=='Cabutan'
+              ? ` <button class="btn btn-ghost" data-cabut="${esc(it.perangkat)}">Cabut</button>` : '';
+            return `<tr><td>${idx+1}</td><td>${esc(witaDisplay(it.tanggal_pasang))}</td><td>${dilepas}</td><td>${jenisBadge}</td><td>${statusBadge}</td><td>${esc(devName(it))}${cabutBtn}</td><td>${srcBtn}</td></tr>`;
           }).join('');
-          extra += `${summary}<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan & Pergantian Perangkat</h3><p class="muted" style="margin-top:-2px">Seluruh riwayat pemasangan perangkat pelanggan ini tercatat (pertama dan setiap pergantian).</p><div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal Pasang</th><th>Tanggal Dilepas</th><th>Jenis</th><th>Status</th><th>Perangkat</th><th>Sumber</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+          extra += `${summary}<div class="card" style="margin-top:8px"><h3>Riwayat Pemasangan & Pergantian Perangkat</h3><p class="muted" style="margin-top:-2px">Seluruh riwayat pemasangan perangkat pelanggan ini tercatat (pertama dan setiap pergantian). Perangkat aktif dapat dicabut langsung lewat tombol Cabut.</p><div class="table-wrap"><table><thead><tr><th>#</th><th>Tanggal Pasang</th><th>Tanggal Dilepas</th><th>Jenis</th><th>Status</th><th>Perangkat</th><th>Sumber</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
         } else {
           // fallback dari data pemasangan (kompatibilitas)
           const r = await pb.collection('pemasangan').getList(1, 200, {filter:`pelanggan = "${id}"`, sort:'tanggal,dibuat_pada'});
@@ -907,9 +964,14 @@
             if(!d) return String(did||'-');
             return `${d.nama||'-'}${d.tipe?(' ('+d.tipe+')'):''}${d.sn_serial?(' SN:'+d.sn_serial):''}`;
           };
+          const canCabut = isAdmin() || isTeknisi();
           const rows = items.map((it,idx)=>{
             const devs = Array.isArray(it.perangkat)?it.perangkat:(it.perangkat?[it.perangkat]:[]);
-            const devTxt = devs.length ? devs.map(devNameById).map(esc).join(', ') : '<span class="muted">-</span>';
+            const devTxt = devs.length ? devs.map(did=>{
+              const d = (state.cache.perangkat||[]).find(x=>String(x.id)===String(did));
+              const cabutBtn = canCabut && d && String(d.kondisi||'')!=='Cabutan' ? ` <button class="btn btn-ghost" data-cabut="${esc(did)}">Cabut</button>` : '';
+              return esc(devNameById(did)) + cabutBtn;
+            }).join(', ') : '<span class="muted">-</span>';
             const mark = idx===0 ? ' <span class="badge">Pemasangan Pertama</span>' : ` <span class="muted">(ke-${idx+1})</span>`;
             return `<tr><td>${idx+1}${mark}</td><td>${esc(witaDisplay(it.tanggal||it.dibuat_pada))}</td><td>${esc(it.status||'-')}</td><td>${devTxt}</td><td><button class="btn btn-ghost" data-open="pemasangan:${esc(it.id)}">Buka</button></td></tr>`;
           }).join('');
@@ -962,9 +1024,95 @@
     }
     const photoFields = ['foto_rumah','foto_perangkat','foto_sebelum','foto_sesudah','foto'];
     const photos = photoFields.filter(f=>rec[f]).map(f=>`<div style="margin:6px 0"><div class="muted">${esc(f)}</div><a href="${esc(pb.fileUrl(rec, rec[f]))}" target="_blank" rel="noopener"><img src="${esc(pb.fileUrl(rec, rec[f]))}" alt="${esc(f)}" style="max-width:220px;border:1px solid var(--border);border-radius:8px"></a></div>`).join('');
-    return `<div class="card"><div class="row" style="justify-content:space-between"><h2>Detail ${esc(mod?mod.label:key)}</h2><div><button class="btn" id="backBtn">Kembali</button> ${canArc?`<button class="btn" id="arcBtn">${rec.diarsipkan?'Pulihkan':'Arsipkan'}</button>`:''}</div></div>
+    // Kartu info terformat untuk data master utama
+    function infoCard(fields){
+      const rows = fields.filter(([,v])=>v!=null&&v!=='').map(([l,v,href])=>{
+        const val = href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v);
+        return `<tr><td class="muted" style="white-space:nowrap;padding:4px 10px 4px 0;vertical-align:top">${esc(l)}</td><td style="padding:4px 0;word-break:break-all">${val}</td></tr>`;
+      }).join('');
+      return rows ? `<table style="width:100%;border-collapse:collapse;margin-bottom:8px">${rows}</table>` : '';
+    }
+    let infoHtml = '';
+    if(key === 'pelanggan'){
+      const tek = nameOf(state.cache.users, rec.teknisi, rec.teknisi||'-');
+      const statusBadge = rec.diarsipkan ? ' <span class="badge low">Nonaktif</span>' : ' <span class="badge">Aktif</span>';
+      const mapsLink = rec.link_maps ? `<a href="${esc(rec.link_maps)}" target="_blank" rel="noopener">${esc(rec.link_maps)}</a>` : '-';
+      const lokasi = rec.keterangan_lokasi ? esc(rec.keterangan_lokasi) : '-';
+      infoHtml = `<div style="margin-bottom:12px">
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td class="muted" style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top">Nama</td><td style="padding:6px 0"><b>${esc(rec.nama||'-')}</b> ${statusBadge}</td></tr>
+          <tr><td class="muted" style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top">No/WA</td><td style="padding:6px 0">${esc(rec.nowa||'-')}</td></tr>
+          <tr><td class="muted" style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top">SN</td><td style="padding:6px 0">${esc(rec.sn_perangkat||'-')}</td></tr>
+          <tr><td class="muted" style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top">Koneksi</td><td style="padding:6px 0">${esc(rec.koneksi||'-')}</td></tr>
+          <tr><td class="muted" style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top">VLAN</td><td style="padding:6px 0">${esc(rec.vlan||'-')}</td></tr>
+          <tr><td class="muted" style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top">Teknisi</td><td style="padding:6px 0">${esc(tek !== rec.teknisi ? tek : (rec.teknisi||'-'))}</td></tr>
+          <tr><td class="muted" style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top">Lokasi</td><td style="padding:6px 0">${lokasi}<div style="margin-top:4px">${mapsLink}</div></td></tr>
+        </table>
+        <div class="muted" style="font-size:.82rem;margin-top:8px">Dibuat: ${esc(witaDisplay(rec.dibuat_pada))} · Diperbarui: ${esc(witaDisplay(rec.diubah_pada))}</div>
+      </div>`;
+    } else if(key === 'inventaris_perangkat'){
+      const kondisiBadge = {'Baik':'<span class="badge">Baik</span>','Terpasang':'<span class="badge low">Terpasang</span>','Rusak':'<span class="badge low">Rusak</span>','Nonaktif':'<span class="badge">Nonaktif</span>','Cabutan':'<span class="badge">Cabutan</span>'};
+      infoHtml = `<div style="margin-bottom:12px">${infoCard([
+        ['No. Inv', rec.no_inv],
+        ['Nama', rec.nama],
+        ['Tipe', rec.tipe],
+        ['SN/Serial', rec.sn_serial],
+        ['Kondisi', kondisiBadge[rec.kondisi]||rec.kondisi],
+        ['Lokasi/Pemegang', rec.lokasi_pemegang],
+        ['Keterangan', rec.keterangan],
+        ['Dibuat', witaDisplay(rec.dibuat_pada)],
+      ])}</div>`;
+    } else if(key === 'inventaris_non_perangkat'){
+      const low = rec.stok_minimum!=null && Number(rec.stok)<=Number(rec.stok_minimum);
+      infoHtml = `<div style="margin-bottom:12px">${infoCard([
+        ['Nama Barang', rec.nama_barang],
+        ['Satuan', rec.satuan],
+        ['Stok Saat Ini', String(rec.stok??'-') + (low?' <span class="badge low">menipis</span>':'')],
+        ['Stok Minimum', rec.stok_minimum!=null?String(rec.stok_minimum):''],
+        ['Keterangan', rec.keterangan],
+      ])}</div>`;
+    } else if(key === 'layanan_gangguan'){
+      const pel = expandName(rec,'pelanggan') || nameOf(state.cache.pelanggan, rec.pelanggan, rec.pelanggan||'-');
+      const tek = nameOf(state.cache.users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-');
+      infoHtml = `<div style="margin-bottom:12px">${infoCard([
+        ['Pelanggan', pel],
+        ['Keluhan', rec.keluhan],
+        ['Status', rec.status],
+        ['Ditugaskan ke', tek],
+        ['Dibuat', witaDisplay(rec.dibuat_pada)],
+        ['Diperbarui', witaDisplay(rec.diubah_pada)],
+      ])}</div>`;
+    } else if(key === 'perbaikan'){
+      const pel = expandName(rec,'pelanggan') || nameOf(state.cache.pelanggan, rec.pelanggan, rec.pelanggan||'-');
+      const tek = nameOf(state.cache.users, rec.teknisi, rec.teknisi||'-');
+      infoHtml = `<div style="margin-bottom:12px">${infoCard([
+        ['Pelanggan', pel],
+        ['Gangguan', rec.gangguan || '-'],
+        ['Tanggal', String(rec.tanggal||'').slice(0,10)],
+        ['Teknisi', tek],
+        ['Status', rec.status],
+        ['Tindakan', rec.tindakan],
+        ['Dibuat', witaDisplay(rec.dibuat_pada)],
+      ])}</div>`;
+    } else if(key === 'pemasangan'){
+      const pel = expandName(rec,'pelanggan') || nameOf(state.cache.pelanggan, rec.pelanggan, rec.pelanggan||'-');
+      const tek = nameOf(state.cache.users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-');
+      infoHtml = `<div style="margin-bottom:12px">${infoCard([
+        ['Pelanggan', pel],
+        ['Tanggal', String(rec.tanggal||'').slice(0,10)],
+        ['Status', rec.status],
+        ['Ditugaskan ke', tek],
+        ['Dibuat', witaDisplay(rec.dibuat_pada)],
+      ])}</div>`;
+    } else {
+      infoHtml = `<pre style="white-space:pre-wrap">${esc(JSON.stringify(rec,null,2))}</pre>`;
+    }
+
+    const canCabut = key==='inventaris_perangkat' && rec && rec.kondisi !== 'Cabutan' && (isAdmin() || isTeknisi());
+    const canCetak = ['pemasangan','perbaikan'].includes(key) && rec && rec.id;
+    return `<div class="card"><div class="row" style="justify-content:space-between"><h2>Detail ${esc(mod?mod.label:key)}</h2><div><button class="btn" id="backBtn">Kembali</button> ${canCetak?`<button class="btn" id="cetakBtn">Cetak Nota</button>`:''} ${canCabut?`<button class="btn" id="cabutBtn" style="border-color:#c2410c;color:#c2410c">Cabut Mesin</button>`:''} ${canArc?`<button class="btn" id="arcBtn">${rec.diarsipkan?'Pulihkan':'Arsipkan'}</button>`:''}</div></div>
       ${photos?`<div class="row" style="align-items:flex-start">${photos}</div>`:''}
-      <pre style="white-space:pre-wrap">${esc(JSON.stringify(rec,null,2))}</pre>
+      ${infoHtml}
       <h3>Ubah</h3>${(['pelanggan','inventaris_perangkat','inventaris_non_perangkat'].includes(key) && !isAdmin())?'<p class="muted">Perubahan data master akan dikirim sebagai usulan persetujuan admin (file foto tidak dikirim lewat usulan).</p>':''}<form id="editForm" novalidate>${editorForm(key,rec)}</form>${extra}</div>${comments}`;
   }
 
@@ -1050,7 +1198,7 @@
     };
     const map={
       pelanggan:[inp('nama','Nama'),inp('nowa','Nomor HP/WA','tel'),inp('sn_perangkat','SN'),inp('koneksi','Koneksi'),inp('vlan','VLAN'),select('teknisi','Teknisi (opsional)',users,u=>u.id,u=>u.nama||u.email,rec.teknisi),inp('link_maps','Link Maps'),inp('keterangan_lokasi','Keterangan Lokasi','textarea'),fileInput('foto_rumah','Foto Rumah')],
-      layanan_gangguan:[pelangganField(rec.pelanggan,true),inp('keluhan','Keluhan','textarea'),inp('status','Status','select',['Baru','Diproses','Selesai']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
+      layanan_gangguan:[pelangganField(rec.pelanggan,true),inp('keluhan','Keluhan','textarea'),inp('status','Status','select',['Baru','Ditindaklanjuti']), isAdmin()?select('ditugaskan_ke','Ditugaskan ke (admin, opsional)',users,u=>u.id,u=>u.nama||u.email,rec.ditugaskan_ke):`<label>Ditugaskan ke</label><input type="text" value="${esc(nameOf(users, rec.ditugaskan_ke, rec.ditugaskan_ke||'-'))}" disabled><input type="hidden" name="ditugaskan_ke" value="${esc(rec.ditugaskan_ke||'')}">`],
       perbaikan:[select('gangguan','Gangguan (opsional)',gang,g=>g.id,g=>g.keluhan?.slice(0,40)||g.id,rec.gangguan),pelangganField(rec.pelanggan,true),inp('tanggal','Tanggal','date'), isAdmin()?select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi):`<label>Teknisi</label><input type="text" value="${esc(nameOf(users, rec.teknisi, rec.teknisi||'-'))}" disabled><input type="hidden" name="teknisi" value="${esc(rec.teknisi||'')}">`, inp('tindakan','Tindakan','textarea'),inp('status','Status','select',['Belum ditindak','Diproses','Selesai']),multiSelect('perangkat','Perangkat terkait',perangkat.filter(p=>!p.diarsipkan && p.kondisi!=='Nonaktif'),p=>p.id,deviceLabel, rec.perangkat,true),materialEditor(rec),fileInput('foto_sebelum','Foto Sebelum'),fileInput('foto_sesudah','Foto Sesudah')],
       pemasangan:[
         (isAdmin() || !(rec && rec.id))
@@ -1063,7 +1211,19 @@
         materialEditor(rec)
       ],
       absen_hadir:[select('teknisi','Teknisi',users,u=>u.id,u=>u.nama||u.email,rec.teknisi||me().id),inp('tanggal','Tanggal','date'),inp('jam_masuk','Jam Masuk'),inp('keterangan','Keterangan','select',['Hadir','Izin','Sakit']),inp('alasan','Alasan','textarea'),inp('metode','Metode','select',['Admin','Mandiri','QR','Tugas'])],
-      inventaris_perangkat:[inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif','Cabutan']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')],
+      inventaris_perangkat:(()=>{
+        const now = new Date(Date.now()+8*3600000);
+        const bln = now.getUTCMonth()+1;
+        const thn = now.getUTCFullYear();
+        const noSeri = esc(rec.no_seri_inv||'');
+        const noInvVal = esc(rec.no_inv||'');
+        const preview = rec.no_inv ? esc(rec.no_inv) : (rec.no_seri_inv ? esc(`INV.ST ${bln}/${thn}/${rec.no_seri_inv}`) : '-');
+        return [inp('nama','Nama','text',null,false,namaSuggestions),inp('tipe','Tipe','text',null,false,tipeSuggestions),inp('sn_serial','SN/Serial'),
+          `<div class="card" style="padding:12px;margin:8px 0;background:var(--bg-surface-alt);box-shadow:none"><div class="muted" style="font-size:.82rem;margin-bottom:6px">Nomor Inventaris (otomatis)</div><div style="font-weight:600" id="noInvPreview">${preview}</div><div class="muted" style="font-size:.8rem;margin-top:4px">Format: INV.ST (BULAN)/(TAHUN)/(NO.SERI) — bulan & tahun otomatis WITA.</div></div>`,
+          `<label for="no_seri_inv">No. Seri Mesin (manual)</label><input id="no_seri_inv" name="no_seri_inv" type="text" value="${noSeri}" placeholder="contoh: 95"><div class="muted" style="font-size:.8rem;margin-top:4px">Isi nomor seri manual. No. Inventaris akan dibuat otomatis.</div>`,
+          `<input type="hidden" name="no_inv" value="${noInvVal}">`,
+          inp('kondisi','Kondisi','select',['Baik','Terpasang','Rusak','Nonaktif','Cabutan']),inp('lokasi_pemegang','Lokasi/Pemegang'),inp('keterangan','Keterangan','textarea'),fileInput('foto_perangkat','Foto Perangkat')];
+      })(),
       inventaris_non_perangkat:(()=>{
         const curNama = String(rec.nama_barang||'').trim();
         const matched = barangPilihOptions.find(b=>String(b.nama_barang||'').trim().toLowerCase()===curNama.toLowerCase());
@@ -1086,6 +1246,7 @@
     let note='';
     if(key==='mutasi_inventaris') note='<p class="muted">Stok sebelum/sesudah dihitung otomatis. Untuk Penyesuaian, isi <b>selisih</b>: sistem 10 dan hasil hitung 8 berarti Kurang 2, bukan 8.</p>';
     if(key==='inventaris_non_perangkat') note='<p class="muted">Stok awal 0. Stok hanya bertambah lewat Mutasi Inventaris jenis Pengadaan.</p>';
+    if(key==='layanan_gangguan') note='<p class="muted">Gangguan dicatat sebagai <b>notice/laporan</b>. Tindak lanjut dilakukan dengan membuat <b>Perbaikan</b> dari detail gangguan ini.</p>';
     if(key==='pemasangan' || key==='perbaikan') note='<p class="muted">Saat status Selesai, perangkat terpilih otomatis menjadi Terpasang di lokasi pelanggan. Perangkat yang sudah terpasang di pelanggan lain akan ditolak.</p>';
     if(key==='pengaturan') note='<p class="muted">Isi <b>Nilai</b> dalam format JSON. Contoh: angka <code>30</code>, teks <code>"23:59"</code>. Perubahan kunci sistem dapat memengaruhi perilaku aplikasi.</p>';
     return note+(map[key]||[]).join('')+`<div class="form-actions" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Simpan</button></div>`;
@@ -1266,6 +1427,96 @@
     });
   }
 
+  function printInvoice(key, rec){
+    const escH = (s)=>String(s==null?'':s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    const pel = rec.expand && rec.expand.pelanggan ? rec.expand.pelanggan : (state.cache.pelanggan||[]).find(p=>p.id===rec.pelanggan) || {};
+    const tekId = key==='perbaikan' ? rec.teknisi : rec.ditugaskan_ke;
+    const tek = rec.expand && (rec.expand.teknisi || rec.expand.ditugaskan_ke) ? (rec.expand.teknisi||rec.expand.ditugaskan_ke) : (state.cache.users||[]).find(u=>u.id===tekId) || {};
+    const devs = Array.isArray(rec.expand&&rec.expand.perangkat) ? rec.expand.perangkat : (Array.isArray(rec.perangkat)?rec.perangkat:[]).map(id=>(state.cache.perangkat||[]).find(p=>p.id===id)||{id});
+    let mats = [];
+    try { mats = typeof rec.material_pemakaian==='string' ? JSON.parse(rec.material_pemakaian||'[]') : (Array.isArray(rec.material_pemakaian)?rec.material_pemakaian:[]); } catch(_){ mats=[]; }
+    const matRows = (mats||[]).map(m=>{
+      const b = (state.cache.barang||[]).find(x=>x.id===m.barang) || {};
+      const nm = b.nama_barang || m.barang || '-';
+      const sat = b.satuan || '';
+      return `<tr><td>${escH(nm)}</td><td style="text-align:right">${escH(m.jumlah||0)} ${escH(sat)}</td><td>${escH(m.keterangan||'')}</td></tr>`;
+    }).join('');
+    const devRows = (devs||[]).map(d=>{
+      const nm = d.nama || d.id || '-';
+      const sn = d.sn_serial || d.sn || '';
+      const tipe = d.tipe || '';
+      return `<tr><td>${escH(nm)}</td><td>${escH(tipe)}</td><td>${escH(sn)}</td></tr>`;
+    }).join('');
+    const judul = key==='pemasangan' ? 'NOTA PEMASANGAN' : 'NOTA PERBAIKAN';
+    const tgl = String(rec.tanggal||rec.selesai_pada||rec.dibuat_pada||'').slice(0,10);
+    const noNota = (key==='pemasangan'?'PSG':'PRB') + '-' + String(rec.id||'').slice(-8).toUpperCase();
+    const tindakan = key==='perbaikan' ? (rec.tindakan||'-') : (rec.keterangan||'-');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escH(judul)} ${escH(noNota)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;color:#111;margin:24px;font-size:13px}
+        .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #222;padding-bottom:12px;margin-bottom:14px}
+        .brand{font-size:22px;font-weight:700} .muted{color:#555}
+        table{width:100%;border-collapse:collapse;margin:8px 0 14px} th,td{border:1px solid #ccc;padding:6px 8px;vertical-align:top} th{background:#f5f5f5;text-align:left}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px}
+        .box{border:1px solid #ddd;padding:10px;border-radius:6px}
+        .sign{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:28px}
+        .sign .line{margin-top:56px;border-top:1px solid #333;padding-top:4px}
+        @media print{ .no-print{display:none} body{margin:0} }
+      </style></head><body>
+      <div class="no-print" style="margin-bottom:12px"><button onclick="window.print()" style="padding:8px 14px">Cetak / Simpan PDF</button></div>
+      <div class="header"><div><div class="brand">MalaHotspot</div><div class="muted">Nota Pekerjaan</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:700">${escH(judul)}</div><div>No: ${escH(noNota)}</div><div>Tanggal: ${escH(tgl)}</div><div>Status: ${escH(rec.status||'-')}</div></div></div>
+      <div class="grid">
+        <div class="box"><b>Pelanggan</b><div>Nama: ${escH(pel.nama||'-')}</div><div>No/WA: ${escH(pel.nowa||'-')}</div><div>SN: ${escH(pel.sn_perangkat||'-')}</div><div>Koneksi: ${escH(pel.koneksi||'-')} ${pel.vlan?(' / VLAN '+escH(pel.vlan)):''}</div><div>Lokasi: ${escH(pel.keterangan_lokasi||'-')}</div></div>
+        <div class="box"><b>Pekerjaan</b><div>Teknisi: ${escH(tek.nama||tek.email||'-')}</div><div>Tanggal: ${escH(tgl)}</div><div>Status: ${escH(rec.status||'-')}</div>${key==='perbaikan' && rec.gangguan ? `<div>Ref. Gangguan: ${escH((rec.expand&&rec.expand.gangguan&&rec.expand.gangguan.keluhan)||rec.gangguan)}</div>`:''}</div>
+      </div>
+      <div class="box" style="margin-bottom:12px"><b>${key==='perbaikan'?'Tindakan':'Keterangan'}</b><div style="margin-top:4px;white-space:pre-wrap">${escH(tindakan)}</div></div>
+      <b>Perangkat</b>
+      <table><thead><tr><th>Perangkat</th><th>Tipe</th><th>SN/Serial</th></tr></thead><tbody>${devRows || '<tr><td colspan="3" class="muted">-</td></tr>'}</tbody></table>
+      <b>Material / Pemakaian</b>
+      <table><thead><tr><th>Barang</th><th style="width:120px">Jumlah</th><th>Keterangan</th></tr></thead><tbody>${matRows || '<tr><td colspan="3" class="muted">-</td></tr>'}</tbody></table>
+      <div class="sign"><div><div>Pelanggan</div><div class="line">${escH(pel.nama||'')}</div></div><div><div>Teknisi</div><div class="line">${escH(tek.nama||tek.email||'')}</div></div></div>
+      <script>window.onload=()=>{ setTimeout(()=>{ try{window.print()}catch(e){} }, 250); };</script>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if(!w){ toast('Popup diblokir. Izinkan popup untuk mencetak nota.', {type:'error'}); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+
+  async function cabutDevice(id){
+    if(!id) return;
+    if(!confirm('Cabut mesin ini? Status akan menjadi Cabutan, lokasi menjadi Kantor, dan riwayat pemasangan aktif akan ditutup.')) return;
+    try{
+      await pb.request('/api/perangkat/'+encodeURIComponent(id)+'/cabut',{method:'POST'});
+      toast('Perangkat berhasil dicabut');
+      state.cache={}; render();
+    }catch(e){ toast(errorText(e),{type:'error'}); }
+  }
+
+  function initInvNoHelper(form){
+    if(!form) return;
+    const seri = form.querySelector('[name="no_seri_inv"]');
+    const noInv = form.querySelector('[name="no_inv"]');
+    const preview = form.querySelector('#noInvPreview');
+    if(!seri) return;
+    const update = ()=>{
+      const v = String(seri.value||'').trim();
+      if(!v){
+        if(preview) preview.textContent = '-';
+        if(noInv) noInv.value = '';
+        return;
+      }
+      let month='', year='';
+      const cur = String(noInv?noInv.value:'').match(/INV\.?\s*ST\s*(\d{1,2})\s*\/\s*(\d{4})\s*\/\s*(.+)$/i);
+      if(cur){ month=cur[1]; year=cur[2]; }
+      if(!month||!year){ const now=new Date(Date.now()+8*3600000); month=String(now.getUTCMonth()+1); year=String(now.getUTCFullYear()); }
+      const composed = `INV.ST ${month}/${year}/${v}`;
+      if(preview) preview.textContent = composed;
+      if(noInv) noInv.value = composed;
+    };
+    seri.addEventListener('input', update);
+    update();
+  }
+
   async function bindActions(){
     const doSearch=()=>{ if(!$('#searchBox')) return; state.search=$('#searchBox').value.trim();state.page=1;render(); };
     $('#btnSearch')&&($('#btnSearch').onclick=doSearch);
@@ -1274,15 +1525,21 @@
     $('#nextPage')&&($('#nextPage').onclick=()=>{state.page=(state.page||1)+1;render();});
     $('#aktifOnly')&&($('#aktifOnly').onchange=(e)=>{state.filterAktif=e.target.checked;state.page=1;render();});
     $('#rekapSort')&&($('#rekapSort').onchange=(e)=>{state.rekapSort=e.target.value;render();});
+    $('#kondisiFilter')&&($('#kondisiFilter').onchange=(e)=>{state.kondisiFilter=e.target.value||'';state.page=1;render();});
     $$('[data-open]').forEach(b=>b.onclick=()=>{const [k,id]=b.dataset.open.split(':'); state.detail=id; state.view=k; render();});
     $$('[data-new]').forEach(b=>b.onclick=()=>openNew(b.dataset.new));
     $('#backBtn')&&($('#backBtn').onclick=()=>{state.detail=null; render();});
     $('#arcBtn')&&($('#arcBtn').onclick=async()=>{ try{ const k=state.view,id=state.detail; const rec=await pb.collection(k).getOne(id); const to=!rec.diarsipkan; if(!confirm(to?'Arsipkan/nonaktifkan data ini?':'Pulihkan data ini?')) return; await pb.collection(k).update(id,{diarsipkan:to, diarsipkan_pada: to? new Date().toISOString():null, diarsipkan_oleh: to? me().id:null}); toast(to?'Data dinonaktifkan':'Data dipulihkan'); render(); }catch(e){toast(errorText(e),{type:'error'});} });
+    $('#cabutBtn')&&($('#cabutBtn').onclick=()=>cabutDevice(state.detail));
+    $$('[data-cabut]').forEach(b=>b.onclick=()=>cabutDevice(b.dataset.cabut));
+    $('#cetakBtn')&&($('#cetakBtn').onclick=async()=>{ try{ const k=state.view,id=state.detail; const rec=await pb.collection(k).getOne(id,{expand:'pelanggan,teknisi,ditugaskan_ke,perangkat,gangguan'}); printInvoice(k, rec); }catch(e){toast(errorText(e),{type:'error'});} });
+    $('#buatPerbaikanDariGangguan')&&($('#buatPerbaikanDariGangguan').onclick=async()=>{ try{ const id=state.detail; const rec=await pb.collection('layanan_gangguan').getOne(id); state.newPrefill={key:'perbaikan', data:{gangguan:id, pelanggan:rec.pelanggan||'', tindakan: rec.keluhan ? `Tindak lanjut gangguan: ${rec.keluhan}` : ''}}; await openNew('perbaikan'); }catch(e){toast(errorText(e),{type:'error'});} });
     initMaterialEditor();
     initBarangNameHelper($('#editForm')||$('#newForm'), state.view);
     initQuickPelanggan($('#editForm')||$('#newForm'));
     initTaskDateHelpers($('#editForm')||$('#newForm'), state.view);
     initSearchableMultiSelect($('#editForm')||$('#newForm'));
+    initInvNoHelper($('#editForm')||$('#newForm'));
     const editForm=$('#editForm');
     if(editForm) attachValidation(editForm,state.view,false);
     editForm&&(editForm.onsubmit=async(ev)=>{
@@ -1470,8 +1727,13 @@
   function prefillNewForm(key,form){
     if(!form) return;
     const today=new Date().toISOString().slice(0,10);
-    const setVal=(name,val)=>{ const el=fieldEl(form,name); if(el && !el.value) el.value=val; };
+    const setVal=(name,val,force=false)=>{ const el=fieldEl(form,name); if(el && (force || !el.value)) el.value=val; };
     if(['pemasangan','perbaikan','mutasi_inventaris','absen_hadir'].includes(key)) setVal('tanggal',today);
+    const pre = state.newPrefill && state.newPrefill.key===key ? state.newPrefill.data : null;
+    if(pre){
+      Object.entries(pre).forEach(([k,v])=>{ if(v!=null) setVal(k,v,true); });
+      state.newPrefill = null;
+    }
   }
   async function openNew(key){
     state.detail=null; state.view=key; await render();
@@ -1492,6 +1754,7 @@
     initQuickPelanggan(form);
     initTaskDateHelpers(form,key);
     initSearchableMultiSelect(form);
+    initInvNoHelper(form);
     attachValidation(form,key,true);
     const submitBtn=form ? form.querySelector('button[type="submit"]') : null;
     form.onsubmit=async(ev)=>{ ev.preventDefault(); const f=ev.target; if(!validateAndShow(f,key,true)) return; await withSubmitState(f,submitBtn,async()=>{ try{ const fd=new FormData(f); await pb.collection(key).create(await formBody(key,fd,true)); toast('Data berhasil ditambahkan'); state.cache={}; render(); }catch(e){handleSubmitError(e,f);} }); };

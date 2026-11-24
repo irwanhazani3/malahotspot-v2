@@ -14,12 +14,11 @@ function witaDateTimeStr(){
   return `${w.getUTCFullYear()}-${pad(w.getUTCMonth()+1)}-${pad(w.getUTCDate())} ${pad(w.getUTCHours())}:${pad(w.getUTCMinutes())}:${pad(w.getUTCSeconds())}`;
 }
 
-const TASK_COLS = ['layanan_gangguan', 'pemasangan', 'perbaikan'];
-
 onRecordUpdateRequest((e) => {
   try{
     const col = e.collection && e.collection.name;
-    if(TASK_COLS.includes(col)){
+    const taskCols = ['layanan_gangguan', 'pemasangan', 'perbaikan'];
+    if(taskCols.includes(col)){
       const oldStatus = e.record.original().getString('status');
       const newStatus = e.record.getString('status');
       const oldDev = String(e.record.original().get('perangkat') || '');
@@ -47,7 +46,8 @@ onRecordUpdateRequest((e) => {
 onRecordCreateRequest((e) => {
   try{
     const col = e.collection && e.collection.name;
-    if(TASK_COLS.includes(col) && e.record.getString('status') === 'Selesai'){
+    const taskCols = ['layanan_gangguan', 'pemasangan', 'perbaikan'];
+    if(taskCols.includes(col) && e.record.getString('status') === 'Selesai'){
       e.record.set('selesai_pada', witaDateTimeStr());
       if(col === 'pemasangan' || col === 'perbaikan'){
         e.record.set('tanggal', witaDateStr() + ' 00:00:00');
